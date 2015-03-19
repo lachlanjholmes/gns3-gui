@@ -73,7 +73,9 @@ class VirtualBoxVM(Node):
             if port_number < self._settings["adapter_start_index"]:
                 continue
             port_name = EthernetPort.longNameType() + str(port_number)
+            short_name = EthernetPort.shortNameType() + str(port_number)
             new_port = EthernetPort(port_name)
+            new_port.setShortName(short_name)
             new_port.setPortNumber(port_number)
             new_port.setPacketCaptureSupported(True)
             self._ports.append(new_port)
@@ -187,9 +189,13 @@ class VirtualBoxVM(Node):
         :param new_settings: settings dictionary
         """
 
-        if "name" in new_settings and new_settings["name"] != self.name() and self.hasAllocatedName(new_settings["name"]):
-            self.error_signal.emit(self.id(), 'Name "{}" is already used by another node'.format(new_settings["name"]))
-            return
+        if "name" in new_settings and new_settings["name"] != self.name():
+            if self.hasAllocatedName(new_settings["name"]):
+                self.error_signal.emit(self.id(), 'Name "{}" is already used by another node'.format(new_settings["name"]))
+                return
+            elif self._linked_clone:
+                # forces the update of the VM name in VirtualBox.
+                new_settings["vmname"] = new_settings["name"]
 
         params = {"id": self._vbox_id}
         for name, value in new_settings.items():
@@ -528,11 +534,13 @@ class VirtualBoxVM(Node):
 
         info = """VirtualBox VM {name} is {state}
   Node ID is {id}, server's VirtualBox VM ID is {vbox_id}
+  VirtualBox name is "{vmname}"
   console is on port {console}
 """.format(name=self.name(),
            id=self.id(),
            vbox_id=self._vbox_id,
            state=state,
+           vmname=self._settings["vmname"],
            console=self._settings["console"])
 
         port_info = ""

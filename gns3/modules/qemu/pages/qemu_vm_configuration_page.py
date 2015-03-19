@@ -20,7 +20,6 @@ Configuration page for QEMU VMs.
 """
 
 import os
-import shutil
 from functools import partial
 from collections import OrderedDict
 
@@ -29,6 +28,8 @@ from gns3.servers import Servers
 from gns3.modules.module_error import ModuleError
 from gns3.main_window import MainWindow
 from gns3.dialogs.node_configurator_dialog import ConfigurationError
+from gns3.utils.progress_dialog import ProgressDialog
+from gns3.utils.file_copy_thread import FileCopyThread
 
 from ..ui.qemu_vm_configuration_page_ui import Ui_QemuVMConfigPageWidget
 from .. import Qemu
@@ -50,30 +51,43 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
         self.uiInitrdToolButton.clicked.connect(self._initrdBrowserSlot)
         self.uiKernelImageToolButton.clicked.connect(self._kernelImageBrowserSlot)
         self.uiActivateCPUThrottlingCheckBox.stateChanged.connect(self._cpuThrottlingChangedSlot)
+        self.uiLegacyNetworkingCheckBox.stateChanged.connect(self._legacyNetworkingChangedSlot)
 
-        qemu_network_devices = OrderedDict([
-            ("e1000", "Intel Gigabit Ethernet"),
-            ("i82550", "Intel i82550 Ethernet"),
-            ("i82551", "Intel i82551 Ethernet"),
-            ("i82557a", "Intel i82557A Ethernet"),
-            ("i82557b", "Intel i82557B Ethernet"),
-            ("i82557c", "Intel i82557C Ethernet"),
-            ("i82558a", "Intel i82558A Ethernet"),
-            ("i82558b", "Intel i82558B Ethernet"),
-            ("i82559a", "Intel i82559A Ethernet"),
-            ("i82559b", "Intel i82559B Ethernet"),
-            ("i82559c", "Intel i82559C Ethernet"),
-            ("i82559er", "Intel i82559ER Ethernet"),
-            ("i82562", "Intel i82562 Ethernet"),
-            ("i82801", "Intel i82801 Ethernet"),
-            ("ne2k_pci", "NE2000 Ethernet"),
-            ("pcnet", "AMD PCNet Ethernet"),
-            ("rtl8139", "Realtek 8139 Ethernet"),
-            ("virtio-net-pci", "Paravirtualized Network I/O"),
-            ("vmxnet3", "VMWare Paravirtualized Ethernet v3")])
+        self._legacy_devices = ("e1000", "i82551", "i82557b", "i82559er", "ne2k_pci", "pcnet", "rtl8139", "virtio")
+        self._qemu_network_devices = OrderedDict([("e1000", "Intel Gigabit Ethernet"),
+                                                  ("i82550", "Intel i82550 Ethernet"),
+                                                  ("i82551", "Intel i82551 Ethernet"),
+                                                  ("i82557a", "Intel i82557A Ethernet"),
+                                                  ("i82557b", "Intel i82557B Ethernet"),
+                                                  ("i82557c", "Intel i82557C Ethernet"),
+                                                  ("i82558a", "Intel i82558A Ethernet"),
+                                                  ("i82558b", "Intel i82558B Ethernet"),
+                                                  ("i82559a", "Intel i82559A Ethernet"),
+                                                  ("i82559b", "Intel i82559B Ethernet"),
+                                                  ("i82559c", "Intel i82559C Ethernet"),
+                                                  ("i82559er", "Intel i82559ER Ethernet"),
+                                                  ("i82562", "Intel i82562 Ethernet"),
+                                                  ("i82801", "Intel i82801 Ethernet"),
+                                                  ("ne2k_pci", "NE2000 Ethernet"),
+                                                  ("pcnet", "AMD PCNet Ethernet"),
+                                                  ("rtl8139", "Realtek 8139 Ethernet"),
+                                                  ("virtio", "Legacy paravirtualized Network I/O"),
+                                                  ("virtio-net-pci", "Paravirtualized Network I/O"),
+                                                  ("vmxnet3", "VMWare Paravirtualized Ethernet v3")])
+
+        self._refreshQemuNetworkDevices()
+
+    def _refreshQemuNetworkDevices(self, legacy_networking=False):
+        """
+        Refreshes the Qemu network device list.
+
+        :param legacy_networking: True if legacy networking is enabled.
+        """
 
         self.uiAdapterTypesComboBox.clear()
-        for device_name, device_description in qemu_network_devices.items():
+        for device_name, device_description in self._qemu_network_devices.items():
+            if legacy_networking and device_name not in self._legacy_devices:
+                continue
             self.uiAdapterTypesComboBox.addItem("{} ({})".format(device_description, device_name), device_name)
 
     @staticmethod
@@ -98,23 +112,25 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
             QtGui.QMessageBox.critical(parent, "QEMU disk images directory", "Could not create the QEMU disk images directory {}: {}".format(destination_directory, e))
             return
 
-        if os.path.dirname(path) != destination_directory:
+        if os.path.normpath(os.path.dirname(path)) != destination_directory:
             # the QEMU disk image is not in the default images directory
-            new_destination_path = os.path.join(destination_directory, os.path.basename(path))
-            try:
-                # try to create a symbolic link to it
-                symlink_path = new_destination_path
-                if os.path.islink(symlink_path):
-                    os.remove(symlink_path)
-                os.symlink(path, symlink_path)
-                path = symlink_path
-            except (OSError, NotImplementedError):
-                # if unsuccessful, then copy the QEMU disk image itself
-                try:
-                    shutil.copyfile(path, new_destination_path)
-                    path = new_destination_path
-                except OSError:
-                    pass
+            reply = QtGui.QMessageBox.question(parent,
+                                               "QEMU disk image",
+                                               "Would you like to copy {} to the default images directory".format(os.path.basename(path)),
+                                               QtGui.QMessageBox.Yes,
+                                               QtGui.QMessageBox.No)
+            if reply == QtGui.QMessageBox.Yes:
+                destination_path = os.path.join(destination_directory, os.path.basename(path))
+                thread = FileCopyThread(path, destination_path)
+                progress_dialog = ProgressDialog(thread, "QEMU disk image", "Copying {}".format(os.path.basename(path)), "Cancel", busy=True, parent=parent)
+                thread.deleteLater()
+                progress_dialog.show()
+                progress_dialog.exec_()
+                errors = progress_dialog.errors()
+                if errors:
+                    QtGui.QMessageBox.critical(parent, "QEMU disk image", "{}".format("".join(errors)))
+                else:
+                    path = destination_path
 
         return path
 
@@ -143,7 +159,7 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
         Slot to open a file browser and select a QEMU initrd.
         """
 
-        path = self._getDiskImage()
+        path = self.getDiskImage(self)
         if path:
             self.uiInitrdLineEdit.clear()
             self.uiInitrdLineEdit.setText(path)
@@ -153,7 +169,7 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
         Slot to open a file browser and select a QEMU kernel image.
         """
 
-        path = self._getDiskImage()
+        path = self.getDiskImage(self)
         if path:
             self.uiKernelImageLineEdit.clear()
             self.uiKernelImageLineEdit.setText(path)
@@ -196,6 +212,16 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
             self.uiCPUThrottlingSpinBox.setEnabled(True)
         else:
             self.uiCPUThrottlingSpinBox.setEnabled(False)
+
+    def _legacyNetworkingChangedSlot(self, state):
+        """
+        Slot to enable or not legacy networking.
+        """
+
+        if state:
+            self._refreshQemuNetworkDevices(legacy_networking=True)
+        else:
+            self._refreshQemuNetworkDevices()
 
     def loadSettings(self, settings, node=None, group=False):
         """
@@ -272,10 +298,10 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
 
         self.uiKernelCommandLineEdit.setText(settings["kernel_command_line"])
         self.uiAdaptersSpinBox.setValue(settings["adapters"])
+        self.uiLegacyNetworkingCheckBox.setChecked(settings["legacy_networking"])
         index = self.uiAdapterTypesComboBox.findData(settings["adapter_type"])
         if index != -1:
             self.uiAdapterTypesComboBox.setCurrentIndex(index)
-        self.uiLegacyNetworkingCheckBox.setChecked(settings["legacy_networking"])
         self.uiRamSpinBox.setValue(settings["ram"])
 
         if settings["cpu_throttling"]:

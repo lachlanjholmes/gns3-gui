@@ -21,6 +21,7 @@ Asynchronously sends JSON messages to the GNS3 server and receives responses wit
 """
 
 import os
+import re
 import base64
 from gns3.node import Node
 from gns3.ports.port import Port
@@ -103,9 +104,12 @@ class Router(Node):
             if "chassis" in self._settings and self._settings["chassis"] in ("1720", "1721", "1750"):
                 # these chassis show their interface without a slot number
                 port_name = port.longNameType() + str(port_number)
+                short_name = port.shortNameType() + str(port_number)
             else:
                 port_name = port.longNameType() + str(slot_number) + "/" + str(port_number)
+                short_name = port.shortNameType() + str(slot_number) + "/" + str(port_number)
             new_port = port(port_name)
+            new_port.setShortName(short_name)
             new_port.setPortNumber(port_number)
             new_port.setSlotNumber(slot_number)
             new_port.setPacketCaptureSupported(True)
@@ -138,7 +142,9 @@ class Router(Node):
             port = WIC_MATRIX[wic]["port"]
             # Dynamips WICs port number start on a multiple of 16.
             port_name = port.longNameType() + str(base + port_number)
+            short_name = port.shortNameType() + str(base + port_number)
             new_port = port(port_name)
+            new_port.setShortName(short_name)
             new_port.setPortNumber(base + port_number)
             # WICs are always in adapter slot 0.
             new_port.setSlotNumber(0)
@@ -190,8 +196,10 @@ class Router(Node):
                             if "chassis" in self._settings and self._settings["chassis"] in ("1720", "1721", "1750"):
                                 # these chassis show their interface without a slot number
                                 port.setName(port.longNameType() + str(wic_port_number))
+                                port.setShortName(port.shortNameType() + str(wic_port_number))
                             else:
                                 port.setName(port.longNameType() + "0/" + str(wic_port_number))
+                                port.setShortName(port.shortNameType() + "0/" + str(wic_port_number))
                             log.debug("port {} renamed to {}".format(old_name, port.name()))
 
     def delete(self):
@@ -1190,6 +1198,23 @@ class Router(Node):
 
         from ..pages.ios_router_configuration_page import IOSRouterConfigurationPage
         return IOSRouterConfigurationPage
+
+    @staticmethod
+    def validateHostname(hostname):
+        """
+        Checks if the hostname is valid.
+
+        :param hostname: hostname to check
+
+        :returns: boolean
+        """
+
+        # IOS names must start with a letter, end with a letter or digit, and
+        # have as interior characters only letters, digits, and hyphens.
+        # They must be 63 characters or fewer.
+        if re.search(r"""^[\-\w]+$""", hostname) and len(hostname) <= 63:
+            return True
+        return False
 
     @staticmethod
     def defaultSymbol():

@@ -20,11 +20,8 @@ Configuration page for IOU devices.
 """
 
 import os
-import re
-import sys
-import pkg_resources
 
-from gns3.qt import QtGui
+from gns3.qt import QtCore, QtGui
 from gns3.dialogs.node_configurator_dialog import ConfigurationError
 from gns3.utils.get_resource import get_resource
 from gns3.utils.get_default_base_config import get_default_base_config
@@ -89,10 +86,7 @@ class iouDeviceConfigurationPage(QtGui.QWidget, Ui_iouDeviceConfigPageWidget):
         Slot to open a file browser and select a initial-config file.
         """
 
-        if hasattr(sys, "frozen"):
-            config_dir = "configs"
-        else:
-            config_dir = pkg_resources.resource_filename("gns3", "configs")
+        config_dir = os.path.join(os.path.dirname(QtCore.QSettings().fileName()), "base_configs")
         path = QtGui.QFileDialog.getOpenFileName(self, "Select an initial configuration", config_dir)
         if not path:
             return
@@ -166,10 +160,7 @@ class iouDeviceConfigurationPage(QtGui.QWidget, Ui_iouDeviceConfigPageWidget):
             name = self.uiNameLineEdit.text()
             if not name:
                 QtGui.QMessageBox.critical(self, "Name", "IOU device name cannot be empty!")
-            elif node and not re.search(r"""^[\-\w]+$""", name):
-                # IOS names must start with a letter, end with a letter or digit, and
-                # have as interior characters only letters, digits, and hyphens.
-                # They must be 63 characters or fewer.
+            elif node and not node.validateHostname(name):
                 QtGui.QMessageBox.critical(self, "Name", "Invalid name detected for IOU device: {}".format(name))
             else:
                 settings["name"] = name
