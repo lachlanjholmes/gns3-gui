@@ -22,7 +22,6 @@ Configuration page for VirtualBox VM preferences.
 import copy
 
 from gns3.qt import QtCore, QtGui
-from gns3.node import Node
 from gns3.main_window import MainWindow
 from gns3.dialogs.symbol_selection_dialog import SymbolSelectionDialog
 from gns3.dialogs.configuration_dialog import ConfigurationDialog
@@ -30,11 +29,12 @@ from gns3.dialogs.configuration_dialog import ConfigurationDialog
 from .. import VirtualBox
 from ..settings import VBOX_VM_SETTINGS
 from ..ui.virtualbox_vm_preferences_page_ui import Ui_VirtualBoxVMPreferencesPageWidget
-from ..pages.virtualbox_vm_configuration_page import virtualBoxVMConfigurationPage
+from ..pages.virtualbox_vm_configuration_page import VirtualBoxVMConfigurationPage
 from ..dialogs.virtualbox_vm_wizard import VirtualBoxVMWizard
 
 
 class VirtualBoxVMPreferencesPage(QtGui.QWidget, Ui_VirtualBoxVMPreferencesPageWidget):
+
     """
     QWidget preference page for VirtualBox VM preferences.
     """
@@ -87,6 +87,7 @@ class VirtualBoxVMPreferencesPage(QtGui.QWidget, Ui_VirtualBoxVMPreferencesPageW
         # fill out the General section
         section_item = self._createSectionItem("General")
         QtGui.QTreeWidgetItem(section_item, ["VM name:", vbox_vm["vmname"]])
+        QtGui.QTreeWidgetItem(section_item, ["RAM:", str(vbox_vm["ram"])])
         QtGui.QTreeWidgetItem(section_item, ["Server:", vbox_vm["server"]])
         QtGui.QTreeWidgetItem(section_item, ["Remote console enabled:", "{}".format(vbox_vm["enable_remote_console"])])
         QtGui.QTreeWidgetItem(section_item, ["Headless mode enabled:", "{}".format(vbox_vm["headless"])])
@@ -95,7 +96,7 @@ class VirtualBoxVMPreferencesPage(QtGui.QWidget, Ui_VirtualBoxVMPreferencesPageW
         # fill out the Network section
         section_item = self._createSectionItem("Network")
         QtGui.QTreeWidgetItem(section_item, ["Adapters:", str(vbox_vm["adapters"])])
-        QtGui.QTreeWidgetItem(section_item, ["Start at:", str(vbox_vm["adapter_start_index"])])
+        QtGui.QTreeWidgetItem(section_item, ["Use any adapter:", "{}".format(vbox_vm["use_any_adapter"])])
         QtGui.QTreeWidgetItem(section_item, ["Type:", vbox_vm["adapter_type"]])
 
         self.uiVirtualBoxVMInfoTreeWidget.expandAll()
@@ -132,7 +133,7 @@ class VirtualBoxVMPreferencesPage(QtGui.QWidget, Ui_VirtualBoxVMPreferencesPageW
         if item:
             key = item.data(0, QtCore.Qt.UserRole)
             vbox_vm = self._virtualbox_vms[key]
-            dialog = ConfigurationDialog(vbox_vm["vmname"], vbox_vm, virtualBoxVMConfigurationPage(), parent=self)
+            dialog = ConfigurationDialog(vbox_vm["vmname"], vbox_vm, VirtualBoxVMConfigurationPage(), parent=self)
             dialog.show()
             if dialog.exec_():
                 if vbox_vm["vmname"] != item.text(0):
@@ -226,5 +227,5 @@ class VirtualBoxVMPreferencesPage(QtGui.QWidget, Ui_VirtualBoxVMPreferencesPageW
         Saves the VirtualBox VM preferences.
         """
 
-        #self._vboxVMSaveSlot()
+        # self._vboxVMSaveSlot()
         VirtualBox.instance().setVirtualBoxVMs(self._virtualbox_vms)

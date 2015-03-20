@@ -16,6 +16,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+
+# WARNING
+# Due to buggy user machines we choose to put this as the first loading modules
+# otherwise the egg cache is initialized in his standard location and
+# if is not writetable the application crash. It's the user fault
+# because one day the user as used sudo to run an egg and break his
+# filesystem permissions, but it's a common mistake.
+from gns3.utils.get_resource import get_resource
+
+
 import datetime
 import sys
 import os
@@ -23,6 +33,11 @@ import traceback
 import time
 import locale
 import argparse
+
+
+from gns3.logger import init_logger
+from gns3.crash_report import CrashReport
+
 
 import logging
 log = logging.getLogger(__name__)
@@ -86,7 +101,7 @@ def main():
     parser.add_argument("--version", help="show the version", action="version", version=__version__)
     parser.add_argument("--debug", help="print out debug messages", action="store_true", default=False)
     options = parser.parse_args()
-    exception_file_path = "exception.log"
+    exception_file_path = "exceptions.log"
 
     if options.project and hasattr(sys, "frozen"):
         os.chdir(os.path.dirname(os.path.abspath(sys.executable)))
@@ -113,6 +128,7 @@ def main():
             # if stdout is not a tty (redirected to the console view),
             # then print the exception on stderr too.
             print("".join(lines), file=sys.stderr)
+        CrashReport.instance().captureException(exception, value, tb)
 
     # catch exceptions to write them in a file
     sys.excepthook = exceptionHook
@@ -127,7 +143,8 @@ def main():
     elif sys.version_info[0] == 3 and sys.version_info < (3, 3):
         raise RuntimeError("Python 3.3 or higher is required")
 
-    version = lambda version_string: [int(i) for i in version_string.split('.')]
+    def version(version_string):
+        return [int(i) for i in version_string.split('.')]
 
     if version(QtCore.QT_VERSION_STR) < version("4.6"):
         raise RuntimeError("Requirement is Qt version 4.6 or higher, got version {}".format(QtCore.QT_VERSION_STR))
@@ -138,13 +155,6 @@ def main():
 
     if DEFAULT_BINDING == "PySide" and version(QtCore.BINDING_VERSION_STR) < version("1.0"):
         raise RuntimeError("Requirement is PySide version 1.0 or higher, got version {}".format(QtCore.BINDING_VERSION_STR))
-
-    try:
-        # if tornado is present then enable pretty logging.
-        import tornado.log
-        tornado.log.enable_pretty_logging()
-    except ImportError:
-        pass
 
     # check for the correct locale
     # (UNIX/Linux only)
@@ -168,12 +178,13 @@ def main():
         except ImportError:
             raise RuntimeError("Python for Windows extensions must be installed.")
 
-        try:
-            # hide the console
-            console_window = win32console.GetConsoleWindow()
-            win32gui.ShowWindow(console_window, win32con.SW_HIDE)
-        except win32console.error as e:
-            print("warning: could not allocate console: {}".format(e))
+        if not options.debug:
+            try:
+                # hide the console
+                console_window = win32console.GetConsoleWindow()
+                win32gui.ShowWindow(console_window, win32con.SW_HIDE)
+            except win32console.error as e:
+                print("warning: could not allocate console: {}".format(e))
 
     app = QtGui.QApplication(sys.argv)
 
@@ -183,33 +194,28 @@ def main():
     app.setApplicationName("GNS3")
     app.setApplicationVersion(__version__)
 
+    formatter = logging.Formatter("[%(levelname)1.1s %(asctime)s %(module)s:%(lineno)d] %(message)s",
+                                  datefmt="%y%m%d %H:%M:%S")
+
+    # on debug enable logging to stdout
+    if options.debug:
+        root_logger = init_logger(logging.DEBUG)
+    else:
+        root_logger = init_logger(logging.INFO)
+
     # save client logging info to a file
-    logfile = os.path.join(os.path.dirname(QtCore.QSettings().fileName()), "GNS3_client.log")  # FIXME: does it work?
+    logfile = os.path.join(os.path.dirname(QtCore.QSettings().fileName()), "gns3_gui.log")
     try:
         try:
             os.makedirs(os.path.dirname(QtCore.QSettings().fileName()))
         except FileExistsError:
             pass
         handler = logging.FileHandler(logfile, "w")
-        if options.debug:
-            root_logger = logging.getLogger()
-            root_logger.setLevel(logging.DEBUG)
-            if len(root_logger.handlers) > 0:
-                root_handler = root_logger.handlers[0]
-            else:
-                root_handler = logging.StreamHandler()
-                root_logger.addHandler(root_handler)
-            root_handler.setLevel(logging.DEBUG)
-        else:
-            handler.setLevel(logging.INFO)
-        log.info('Log level: {}'.format(logging.getLevelName(log.getEffectiveLevel())))
-
-        formatter = logging.Formatter("[%(levelname)1.1s %(asctime)s %(module)s:%(lineno)d] %(message)s",
-                                      datefmt="%y%m%d %H:%M:%S")
-        handler.setFormatter(formatter)
-        log.addHandler(handler)
+        root_logger.addHandler(handler)
     except OSError as e:
         log.warn("could not log to {}: {}".format(logfile, e))
+
+    log.info('Log level: {}'.format(logging.getLevelName(log.getEffectiveLevel())))
 
     # update the exception file path to have it in the same directory as the settings file.
     exception_file_path = os.path.join(os.path.dirname(QtCore.QSettings().fileName()), exception_file_path)

@@ -28,6 +28,10 @@ import json
 from .qt import QtCore
 from .node import Node
 from .version import __version__
+try:
+    from gns3converter import __version__ as gns3converter_version
+except ImportError:
+    gns3converter_version = "Not installed"
 
 
 class ConsoleCmd(cmd.Cmd):
@@ -45,6 +49,7 @@ class ConsoleCmd(cmd.Cmd):
         if hasattr(sys, "frozen"):
             compiled = "(compiled)"
         print("GNS3 version is {} {}".format(__version__, compiled))
+        print("GNS3 Converter version is {}".format(gns3converter_version))
         print("Python version is {}.{}.{} ({}-bit) with {} encoding".format(sys.version_info[0],
                                                                             sys.version_info[1],
                                                                             sys.version_info[2],
@@ -210,18 +215,15 @@ class ConsoleCmd(cmd.Cmd):
         ch = logging.StreamHandler(sys.stdout)
 
         if len(args) == 1:
-            try:
-                level = int(args[0])
-                if level == 0:
-                    print("Deactivating debugging")
-                    root.removeHandler(ch)
-                else:
-                    print("Activating debugging")
-                    root.addHandler(ch)
-                from .main_window import MainWindow
-                MainWindow.instance().setSettings({"debug_level": level})
-            except:
-                print(self.do_debug.__doc__)
+            level = int(args[0])
+            if level == 0:
+                print("Deactivating debugging")
+                root.removeHandler(ch)
+            else:
+                print("Activating debugging")
+                root.addHandler(ch)
+            from .main_window import MainWindow
+            MainWindow.instance().setSettings({"debug_level": level})
         else:
             print(self.do_debug.__doc__)
 
@@ -260,6 +262,10 @@ class ConsoleCmd(cmd.Cmd):
 
         :param params: list of parameters
         """
+
+        if self._topology.project is None:
+            print("Sorry, the project hasn't been saved yet")
+            return
 
         topology = self._topology.dump()
         if len(params) == 1:

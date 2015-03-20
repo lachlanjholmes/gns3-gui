@@ -21,48 +21,15 @@ Default VirtualBox settings.
 
 from gns3.node import Node
 
-import sys
-import os
-
-# default path to VirtualBox vboxmanage executable
-if sys.platform.startswith("win"):
-    if "VBOX_INSTALL_PATH" in os.environ:
-        DEFAULT_VBOXMANAGE_PATH = os.path.join(os.environ["VBOX_INSTALL_PATH"], "VBoxManage.exe")
-    elif "VBOX_MSI_INSTALL_PATH" in os.environ:
-        DEFAULT_VBOXMANAGE_PATH = os.path.join(os.environ["VBOX_MSI_INSTALL_PATH"], "VBoxManage.exe")
-    else:
-        DEFAULT_VBOXMANAGE_PATH = "VBoxManage.exe"
-elif sys.platform.startswith("darwin"):
-    DEFAULT_VBOXMANAGE_PATH = "/Applications/VirtualBox.app/Contents/MacOS/VBoxManage"
-else:
-    paths = [os.getcwd()] + os.environ["PATH"].split(os.pathsep)
-    # look for vboxmanage in the current working directory and $PATH
-    DEFAULT_VBOXMANAGE_PATH = "vboxmanage"
-    for path in paths:
-        try:
-            if "vboxmanage" in os.listdir(path) and os.access(os.path.join(path, "vboxmanage"), os.X_OK):
-                DEFAULT_VBOXMANAGE_PATH = os.path.join(path, "vboxmanage")
-                break
-        except OSError:
-            continue
-
 VBOX_SETTINGS = {
-    "vboxmanage_path": DEFAULT_VBOXMANAGE_PATH,
+    "vboxmanage_path": "",
     "vbox_user": "",
-    "console_start_port_range": 3501,
-    "console_end_port_range": 4000,
-    "udp_start_port_range": 35001,
-    "udp_end_port_range": 35512,
     "use_local_server": True,
 }
 
 VBOX_SETTING_TYPES = {
     "vboxmanage_path": str,
     "vbox_user": str,
-    "console_start_port_range": int,
-    "console_end_port_range": int,
-    "udp_start_port_range": int,
-    "udp_end_port_range": int,
     "use_local_server": bool,
 }
 
@@ -72,7 +39,8 @@ VBOX_VM_SETTINGS = {
     "hover_symbol": ":/symbols/vbox_guest.selected.svg",
     "category": Node.end_devices,
     "adapters": 1,
-    "adapter_start_index": 0,
+    "ram": 0,
+    "use_any_adapter": False,
     "adapter_type": "Intel PRO/1000 MT Desktop (82540EM)",
     "headless": False,
     "enable_remote_console": False,
@@ -86,7 +54,8 @@ VBOX_VM_SETTING_TYPES = {
     "hover_symbol": str,
     "category": int,
     "adapters": int,
-    "adapter_start_index": int,
+    "ram": int,
+    "use_any_adapter": bool,
     "adapter_type": str,
     "headless": bool,
     "enable_remote_console": bool,

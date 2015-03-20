@@ -19,10 +19,8 @@
 QEMU module implementation.
 """
 
-import os
-
 from gns3.qt import QtCore, QtGui
-from gns3.node import Node
+from gns3.local_config import LocalConfig
 
 from ..module import Module
 from ..module_error import ModuleError
@@ -35,6 +33,7 @@ log = logging.getLogger(__name__)
 
 
 class Qemu(Module):
+
     """
     QEMU module.
     """
@@ -45,8 +44,6 @@ class Qemu(Module):
         self._settings = {}
         self._qemu_vms = {}
         self._nodes = []
-        self._servers = []
-        self._working_dir = ""
 
         # load the settings
         self._loadSettings()
@@ -57,12 +54,24 @@ class Qemu(Module):
         Loads the settings from the persistent settings file.
         """
 
-        # load the settings
+        local_config = LocalConfig.instance()
+
+        # restore the Qemu settings from QSettings (for backward compatibility)
+        legacy_settings = {}
         settings = QtCore.QSettings()
         settings.beginGroup(self.__class__.__name__)
-        for name, value in QEMU_SETTINGS.items():
-            self._settings[name] = settings.value(name, value, type=QEMU_SETTING_TYPES[name])
+        for name in QEMU_SETTINGS.keys():
+            if settings.contains(name):
+                legacy_settings[name] = settings.value(name, type=QEMU_SETTING_TYPES[name])
+        settings.remove("")
         settings.endGroup()
+
+        if legacy_settings:
+            local_config.saveSectionSettings(self.__class__.__name__, legacy_settings)
+        self._settings = local_config.loadSectionSettings(self.__class__.__name__, QEMU_SETTINGS)
+
+        # keep the config file sync
+        self._saveSettings()
 
     def _saveSettings(self):
         """
@@ -70,36 +79,49 @@ class Qemu(Module):
         """
 
         # save the settings
-        settings = QtCore.QSettings()
-        settings.beginGroup(self.__class__.__name__)
-        for name, value in self._settings.items():
-            settings.setValue(name, value)
-        settings.endGroup()
+        LocalConfig.instance().saveSectionSettings(self.__class__.__name__, self._settings)
 
     def _loadQemuVMs(self):
         """
         Load the QEMU VMs from the persistent settings file.
         """
 
+        local_config = LocalConfig.instance()
+
+        # restore the Qemu settings from QSettings (for backward compatibility)
+        qemu_vms = []
         # load the settings
         settings = QtCore.QSettings()
         settings.beginGroup("QemuVMs")
-
-        # load the VMs
-        size = settings.beginReadArray("VM")
+        # load the QEMU VMs
+        size = settings.beginReadArray("vm")
         for index in range(0, size):
             settings.setArrayIndex(index)
-            name = settings.value("name")
-            server = settings.value("server")
-            key = "{server}:{name}".format(server=server, name=name)
-            if key in self._qemu_vms or not name or not server:
-                continue
-            self._qemu_vms[key] = {}
+            vm = {}
             for setting_name, default_value in QEMU_VM_SETTINGS.items():
-                self._qemu_vms[key][setting_name] = settings.value(setting_name, default_value, QEMU_VM_SETTING_TYPES[setting_name])
-
+                vm[setting_name] = settings.value(setting_name, default_value, QEMU_VM_SETTING_TYPES[setting_name])
+            qemu_vms.append(vm)
         settings.endArray()
+        settings.remove("")
         settings.endGroup()
+
+        if qemu_vms:
+            local_config.saveSectionSettings(self.__class__.__name__, {"vms": qemu_vms})
+
+        settings = local_config.settings()
+        if "vms" in settings.get(self.__class__.__name__, {}):
+            for vm in settings[self.__class__.__name__]["vms"]:
+                name = vm.get("name")
+                server = vm.get("server")
+                key = "{server}:{name}".format(server=server, name=name)
+                if key in self._qemu_vms or not name or not server:
+                    continue
+                vm_settings = QEMU_VM_SETTINGS.copy()
+                vm_settings.update(vm)
+                self._qemu_vms[key] = vm_settings
+
+        # keep things sync
+        self._saveQemuVMs()
 
     def _saveQemuVMs(self):
         """
@@ -107,20 +129,7 @@ class Qemu(Module):
         """
 
         # save the settings
-        settings = QtCore.QSettings()
-        settings.beginGroup("QemuVMs")
-        settings.remove("")
-
-        # save the Qemu VMs
-        settings.beginWriteArray("VM", len(self._qemu_vms))
-        index = 0
-        for qemu_vm in self._qemu_vms.values():
-            settings.setArrayIndex(index)
-            for name, value in qemu_vm.items():
-                settings.setValue(name, value)
-            index += 1
-        settings.endArray()
-        settings.endGroup()
+        LocalConfig.instance().saveSectionSettings(self.__class__.__name__, {"vms": list(self._qemu_vms.values())})
 
     def qemuVMs(self):
         """
@@ -140,60 +149,6 @@ class Qemu(Module):
 
         self._qemu_vms = new_qemu_vms.copy()
         self._saveQemuVMs()
-
-    def setProjectFilesDir(self, path):
-        """
-        Sets the project files directory path this module.
-
-        :param path: path to the local project files directory
-        """
-
-        self._working_dir = path
-        log.info("local working directory for QEMU module: {}".format(self._working_dir))
-
-        # update the server with the new working directory / project name
-        for server in self._servers:
-            if server.connected():
-                self._sendSettings(server)
-
-    def setImageFilesDir(self, path):
-        """
-        Sets the image files directory path this module.
-
-        :param path: path to the local image files directory
-        """
-
-        pass  # not used by this module
-
-    def addServer(self, server):
-        """
-        Adds a server to be used by this module.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("adding server {}:{} to QEMU module".format(server.host, server.port))
-        self._servers.append(server)
-        self._sendSettings(server)
-
-    def removeServer(self, server):
-        """
-        Removes a server from being used by this module.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("removing server {}:{} from QEMU module".format(server.host, server.port))
-        self._servers.remove(server)
-
-    def servers(self):
-        """
-        Returns all the servers used by this module.
-
-        :returns: list of WebSocketClient instances
-        """
-
-        return self._servers
 
     def addNode(self, node):
         """
@@ -230,69 +185,21 @@ class Qemu(Module):
         :param settings: module settings (dictionary)
         """
 
-        params = {}
-        for name, value in settings.items():
-            if name in self._settings and self._settings[name] != value:
-                params[name] = value
-
-        if params:
-            for server in self._servers:
-                # send the local working directory only if this is a local server
-                if server.isLocal():
-                    params.update({"working_dir": self._working_dir})
-                else:
-                    project_name = os.path.basename(self._working_dir)
-                    if project_name.endswith("-files"):
-                        project_name = project_name[:-6]
-                    params.update({"project_name": project_name})
-                server.send_notification("qemu.settings", params)
-
         self._settings.update(settings)
         self._saveSettings()
 
-    def _sendSettings(self, server):
-        """
-        Sends the module settings to the server.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("sending QEMU settings to server {}:{}".format(server.host, server.port))
-        params = self._settings.copy()
-
-        # send the local working directory only if this is a local server
-        if server.isLocal():
-            params.update({"working_dir": self._working_dir})
-        else:
-            project_name = os.path.basename(self._working_dir)
-            if project_name.endswith("-files"):
-                project_name = project_name[:-6]
-            params.update({"project_name": project_name})
-        server.send_notification("qemu.settings", params)
-
-    def createNode(self, node_class, server):
+    def createNode(self, node_class, server, project):
         """
         Creates a new node.
 
         :param node_class: Node object
-        :param server: WebSocketClient instance
+        :param server: HTTPClient instance
         """
 
         log.info("creating node {}".format(node_class))
 
-        if not server.connected():
-            try:
-                log.info("reconnecting to server {}:{}".format(server.host, server.port))
-                server.reconnect()
-            except OSError as e:
-                raise ModuleError("Could not connect to server {}:{}: {}".format(server.host,
-                                                                                 server.port,
-                                                                                 e))
-        if server not in self._servers:
-            self.addServer(server)
-
         # create an instance of the node class
-        return node_class(self, server)
+        return node_class(self, server, project)
 
     def setupNode(self, node, node_name):
         """
@@ -335,12 +242,18 @@ class Qemu(Module):
                     "adapters": self._qemu_vms[vm]["adapters"],
                     "adapter_type": self._qemu_vms[vm]["adapter_type"]}
 
-        #FIXME: this is ugly...
+        # FIXME: this is ugly...
         if self._qemu_vms[vm]["hda_disk_image"]:
             settings["hda_disk_image"] = self._qemu_vms[vm]["hda_disk_image"]
 
         if self._qemu_vms[vm]["hdb_disk_image"]:
             settings["hdb_disk_image"] = self._qemu_vms[vm]["hdb_disk_image"]
+
+        if self._qemu_vms[vm]["hdc_disk_image"]:
+            settings["hdc_disk_image"] = self._qemu_vms[vm]["hdc_disk_image"]
+
+        if self._qemu_vms[vm]["hdd_disk_image"]:
+            settings["hdd_disk_image"] = self._qemu_vms[vm]["hdd_disk_image"]
 
         if self._qemu_vms[vm]["initrd"]:
             settings["initrd"] = self._qemu_vms[vm]["initrd"]
@@ -376,26 +289,7 @@ class Qemu(Module):
         """
 
         log.info("QEMU module reset")
-        for server in self._servers:
-            if server.connected():
-                server.send_notification("qemu.reset")
-        self._servers.clear()
         self._nodes.clear()
-
-    def notification(self, destination, params):
-        """
-        To received notifications from the server.
-
-        :param destination: JSON-RPC method
-        :param params: JSON-RPC params
-        """
-
-        if "id" in params:
-            for node in self._nodes:
-                if node.id() == params["id"]:
-                    message = "node {}: {}".format(node.name(), params["message"])
-                    self.notification_signal.emit(message, params["details"])
-                    node.stop()
 
     def getQemuBinariesFromServer(self, server, callback):
         """
@@ -404,17 +298,7 @@ class Qemu(Module):
         :param server: server to send the request to
         :param callback: callback for the reply from the server
         """
-
-        if not server.connected():
-            try:
-                log.info("reconnecting to server {}:{}".format(server.host, server.port))
-                server.reconnect()
-            except OSError as e:
-                raise ModuleError("Could not connect to server {}:{}: {}".format(server.host,
-                                                                                 server.port,
-                                                                                 e))
-
-        server.send_message("qemu.qemu_list", None, callback)
+        server.get("/qemu/binaries", callback)
 
     @staticmethod
     def getNodeClass(name):
@@ -453,8 +337,8 @@ class Qemu(Module):
                  "default_symbol": qemu_vm["default_symbol"],
                  "hover_symbol": qemu_vm["hover_symbol"],
                  "categories": [qemu_vm["category"]]
-                }
-        )
+                 }
+            )
         return nodes
 
     @staticmethod

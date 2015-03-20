@@ -21,16 +21,16 @@ Wizard for VirtualBox VMs.
 
 import sys
 
+from functools import partial
 from gns3.qt import QtCore, QtGui
 from gns3.servers import Servers
-from gns3.utils.connect_to_server import ConnectToServer
-from gns3.modules.module_error import ModuleError
 
 from ..ui.virtualbox_vm_wizard_ui import Ui_VirtualBoxVMWizard
 from .. import VirtualBox
 
 
 class VirtualBoxVMWizard(QtGui.QWizard, Ui_VirtualBoxVMWizard):
+
     """
     Wizard to create a VirtualBox VM.
 
@@ -64,28 +64,29 @@ class VirtualBoxVMWizard(QtGui.QWizard, Ui_VirtualBoxVMWizard):
             for server in Servers.instance().remoteServers().values():
                 self.uiRemoteServersComboBox.addItem("{}:{}".format(server.host, server.port), server)
         if self.page(page_id) == self.uiVirtualBoxWizardPage:
-            self._vbox_vms_progress_dialog = QtGui.QProgressDialog("Loading VirtualBox VMs", "Cancel", 0, 0, parent=self)
-            self._vbox_vms_progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
-            self._vbox_vms_progress_dialog.setWindowTitle("VirtualBox VMs")
-            self._vbox_vms_progress_dialog.show()
-            try:
-                VirtualBox.instance().getVirtualBoxVMsFromServer(self._server, self._getVirtualBoxVMsFromServerCallback)
-            except ModuleError as e:
-                self._vbox_vms_progress_dialog.reject()
-                QtGui.QMessageBox.critical(self, "VirtualBox VMs", "Error while getting the VirtualBox VMs: {}".format(e))
+            progress_dialog = QtGui.QProgressDialog("Loading VirtualBox VMs", "Cancel", 0, 0, parent=self)
+            progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
+            progress_dialog.setWindowTitle("VirtualBox VMs")
+            progress_dialog.show()
+            self._server.get("/virtualbox/vms", partial(self._getVirtualBoxVMsFromServerCallback, progress_dialog))
 
-    def _getVirtualBoxVMsFromServerCallback(self, result, error=False):
+    def _getVirtualBoxVMsFromServerCallback(self, progress_dialog, result, error=False, **kwargs):
         """
         Callback for getVirtualBoxVMsFromServer.
 
+        :param progress_dialog: QProgressDialog instance
         :param result: server response
         :param error: indicates an error (boolean)
         """
 
-        if self._vbox_vms_progress_dialog.wasCanceled():
+        if progress_dialog.wasCanceled():
             return
-        self._vbox_vms_progress_dialog.accept()
+        if error:
+            progress_dialog.reject()
+            QtGui.QMessageBox.critical(self, "VirtualBox VMs", "Error while getting the VirtualBox VMs: {}".format(result["message"]))
+            return
 
+        progress_dialog.accept()
         if error:
             QtGui.QMessageBox.critical(self, "VirtualBox VMs", "{}".format(result["message"]))
         else:
@@ -94,9 +95,9 @@ class VirtualBoxVMWizard(QtGui.QWizard, Ui_VirtualBoxVMWizard):
             for existing_vm in self._virtualbox_vms.values():
                 existing_vms.append(existing_vm["vmname"])
 
-            for vm in result["vms"]:
-                if vm not in existing_vms:
-                    self.uiVMListComboBox.addItem(vm)
+            for vm in result:
+                if vm["vmname"] not in existing_vms:
+                    self.uiVMListComboBox.addItem(vm["vmname"], vm)
 
     def validateCurrentPage(self):
         """
@@ -105,7 +106,7 @@ class VirtualBoxVMWizard(QtGui.QWizard, Ui_VirtualBoxVMWizard):
 
         if self.currentPage() == self.uiServerWizardPage:
 
-            #FIXME: prevent users to use "cloud"
+            # FIXME: prevent users to use "cloud"
             if self.uiCloudRadioButton.isChecked():
                 QtGui.QMessageBox.critical(self, "Cloud", "Sorry not implemented yet!")
                 return False
@@ -117,8 +118,6 @@ class VirtualBoxVMWizard(QtGui.QWizard, Ui_VirtualBoxVMWizard):
                     QtGui.QMessageBox.critical(self, "Remote server", "There is no remote server registered in VirtualBox preferences")
                     return False
                 server = self.uiRemoteServersComboBox.itemData(self.uiRemoteServersComboBox.currentIndex())
-            if not server.connected() and ConnectToServer(self, server) is False:
-                return False
             self._server = server
         if self.currentPage() == self.uiVirtualBoxWizardPage:
             if not self.uiVMListComboBox.count():
@@ -138,11 +137,14 @@ class VirtualBoxVMWizard(QtGui.QWizard, Ui_VirtualBoxVMWizard):
         else:
             server = self.uiRemoteServersComboBox.currentText()
 
-        vmname = self.uiVMListComboBox.itemText(self.uiVMListComboBox.currentIndex())
+        index = self.uiVMListComboBox.currentIndex()
+        vmname = self.uiVMListComboBox.itemText(index)
+        vminfo = self.uiVMListComboBox.itemData(index)
 
         settings = {
             "vmname": vmname,
             "server": server,
+            "ram": vminfo["ram"],
             "linked_base": self.uiBaseVMCheckBox.isChecked()
         }
 

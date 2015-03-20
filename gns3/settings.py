@@ -21,7 +21,6 @@ Default general settings.
 
 import os
 import sys
-import tempfile
 import platform
 
 # Projects directory location
@@ -29,26 +28,6 @@ DEFAULT_PROJECTS_PATH = os.path.normpath(os.path.expanduser("~/GNS3/projects"))
 
 # Images directory location
 DEFAULT_IMAGES_PATH = os.path.normpath(os.path.expanduser("~/GNS3/images"))
-
-# Temporary files location
-DEFAULT_TEMPORARY_FILES_PATH = tempfile.gettempdir()
-
-# Default path to the local GNS3 server executable
-if sys.platform.startswith("win"):
-    DEFAULT_LOCAL_SERVER_PATH = "gns3server.exe"
-elif sys.platform.startswith("darwin") and hasattr(sys, "frozen"):
-    DEFAULT_LOCAL_SERVER_PATH = "server/Contents/MacOS/gns3server"
-else:
-    paths = [os.getcwd()] + os.environ["PATH"].split(os.pathsep)
-    # look for gns3server in the current working directory and $PATH
-    DEFAULT_LOCAL_SERVER_PATH = "gns3server"
-    for path in paths:
-        try:
-            if "gns3server" in os.listdir(path) and os.access(os.path.join(path, "gns3server"), os.X_OK):
-                DEFAULT_LOCAL_SERVER_PATH = os.path.join(path, "gns3server")
-                break
-        except OSError:
-            continue
 
 DEFAULT_LOCAL_SERVER_HOST = "127.0.0.1"
 DEFAULT_LOCAL_SERVER_PORT = 8000
@@ -188,14 +167,17 @@ if sys.platform.startswith("win") and "PROGRAMFILES(X86)" in os.environ:
     # Windows 64-bit
     DEFAULT_PACKET_CAPTURE_ANALYZER_COMMAND = r'"{}\SolarWinds\ResponseTimeViewer\ResponseTimeViewer.exe" %c'.format(os.environ["PROGRAMFILES(X86)"])
 
-STYLES = ["Charcoal (default)", "Classic", "Legacy"]
+STYLES = ["Charcoal", "Classic", "Legacy"]
+
+if sys.platform.startswith("win"):
+    DEFAULT_STYLE = "Classic"
+else:
+    DEFAULT_STYLE = "Charcoal"
 
 GENERAL_SETTINGS = {
-    "projects_path": DEFAULT_PROJECTS_PATH,
-    "images_path": DEFAULT_IMAGES_PATH,
-    "temporary_files_path": DEFAULT_TEMPORARY_FILES_PATH,
-    "style": STYLES[0],
+    "style": DEFAULT_STYLE,
     "auto_launch_project_dialog": True,
+    "auto_screenshot": True,
     "check_for_update": True,
     "last_check_for_update": 0,
     "slow_device_start_all": 0,
@@ -211,11 +193,9 @@ GENERAL_SETTINGS = {
 }
 
 GENERAL_SETTING_TYPES = {
-    "projects_path": str,
-    "images_path": str,
-    "temporary_files_path": str,
     "style": str,
     "auto_launch_project_dialog": bool,
+    "auto_screenshot": bool,
     "check_for_update": bool,
     "last_check_for_update": int,
     "slow_device_start_all": int,
@@ -246,6 +226,36 @@ GRAPHICS_VIEW_SETTING_TYPES = {
     "draw_link_status_points": bool,
     "default_label_font": str,
     "default_label_color": str,
+}
+
+LOCAL_SERVER_SETTINGS = {
+    "path": "",
+    "host": DEFAULT_LOCAL_SERVER_HOST,
+    "port": DEFAULT_LOCAL_SERVER_PORT,
+    "images_path": DEFAULT_IMAGES_PATH,
+    "projects_path": DEFAULT_PROJECTS_PATH,
+    "report_errors": True,
+    "auto_start": True,
+    "allow_console_from_anywhere": False,
+    "console_start_port_range": 2001,
+    "console_end_port_range": 5000,
+    "udp_start_port_range": 10000,
+    "udp_end_port_range": 20000,
+}
+
+LOCAL_SERVER_SETTING_TYPES = {
+    "path": str,
+    "host": str,
+    "port": int,
+    "images_path": str,
+    "projects_path": str,
+    "report_errors": bool,
+    "auto_start": bool,
+    "allow_console_from_anywhere": bool,
+    "console_start_port_range": int,
+    "console_end_port_range": int,
+    "udp_start_port_range": int,
+    "udp_end_port_range": int,
 }
 
 PACKET_CAPTURE_SETTINGS = {

@@ -21,13 +21,14 @@ Configuration page for VirtualBox preferences.
 
 import os
 from gns3.qt import QtGui
-from gns3.servers import Servers
+
 from .. import VirtualBox
 from ..ui.virtualbox_preferences_page_ui import Ui_VirtualBoxPreferencesPageWidget
 from ..settings import VBOX_SETTINGS
 
 
 class VirtualBoxPreferencesPage(QtGui.QWidget, Ui_VirtualBoxPreferencesPageWidget):
+
     """
     QWidget preference page for VirtualBox.
     """
@@ -41,9 +42,6 @@ class VirtualBoxPreferencesPage(QtGui.QWidget, Ui_VirtualBoxPreferencesPageWidge
         self.uiUseLocalServercheckBox.stateChanged.connect(self._useLocalServerSlot)
         self.uiRestoreDefaultsPushButton.clicked.connect(self._restoreDefaultsSlot)
         self.uiVboxManagePathToolButton.clicked.connect(self._vboxPathBrowserSlot)
-
-        #FIXME: temporally hide test button
-        self.uiTestSettingsPushButton.hide()
 
     def _vboxPathBrowserSlot(self):
         """
@@ -69,13 +67,17 @@ class VirtualBoxPreferencesPage(QtGui.QWidget, Ui_VirtualBoxPreferencesPageWidge
 
     def _useLocalServerSlot(self, state):
         """
-        Slot to enable or not the QTreeWidget for remote servers.
+        Slot to enable or not local server settings.
         """
 
         if state:
-            self.uiRemoteServersTreeWidget.setEnabled(False)
+            self.uiVboxManagePathLineEdit.setEnabled(True)
+            self.uiVboxManagePathToolButton.setEnabled(True)
+            self.uiVboxManageUserLineEdit.setEnabled(True)
         else:
-            self.uiRemoteServersTreeWidget.setEnabled(True)
+            self.uiVboxManagePathLineEdit.setEnabled(False)
+            self.uiVboxManagePathToolButton.setEnabled(False)
+            self.uiVboxManageUserLineEdit.setEnabled(False)
 
     def _populateWidgets(self, settings):
         """
@@ -87,26 +89,6 @@ class VirtualBoxPreferencesPage(QtGui.QWidget, Ui_VirtualBoxPreferencesPageWidge
         self.uiVboxManagePathLineEdit.setText(settings["vboxmanage_path"])
         self.uiVboxManageUserLineEdit.setText(settings["vbox_user"])
         self.uiUseLocalServercheckBox.setChecked(settings["use_local_server"])
-        self.uiConsoleStartPortSpinBox.setValue(settings["console_start_port_range"])
-        self.uiConsoleEndPortSpinBox.setValue(settings["console_end_port_range"])
-        self.uiUDPStartPortSpinBox.setValue(settings["udp_start_port_range"])
-        self.uiUDPEndPortSpinBox.setValue(settings["udp_end_port_range"])
-
-    def _updateRemoteServersSlot(self):
-        """
-        Adds/Updates the available remote servers.
-        """
-
-        servers = Servers.instance()
-        self.uiRemoteServersTreeWidget.clear()
-        for server in servers.remoteServers().values():
-            host = server.host
-            port = server.port
-            item = QtGui.QTreeWidgetItem(self.uiRemoteServersTreeWidget)
-            item.setText(0, host)
-            item.setText(1, str(port))
-
-        self.uiRemoteServersTreeWidget.resizeColumnToContents(0)
 
     def loadPreferences(self):
         """
@@ -115,10 +97,6 @@ class VirtualBoxPreferencesPage(QtGui.QWidget, Ui_VirtualBoxPreferencesPageWidge
 
         vbox_settings = VirtualBox.instance().settings()
         self._populateWidgets(vbox_settings)
-
-        servers = Servers.instance()
-        servers.updated_signal.connect(self._updateRemoteServersSlot)
-        self._updateRemoteServersSlot()
 
     def savePreferences(self):
         """
@@ -129,8 +107,4 @@ class VirtualBoxPreferencesPage(QtGui.QWidget, Ui_VirtualBoxPreferencesPageWidge
         new_settings["vboxmanage_path"] = self.uiVboxManagePathLineEdit.text()
         new_settings["vbox_user"] = self.uiVboxManageUserLineEdit.text()
         new_settings["use_local_server"] = self.uiUseLocalServercheckBox.isChecked()
-        new_settings["console_start_port_range"] = self.uiConsoleStartPortSpinBox.value()
-        new_settings["console_end_port_range"] = self.uiConsoleEndPortSpinBox.value()
-        new_settings["udp_start_port_range"] = self.uiUDPStartPortSpinBox.value()
-        new_settings["udp_end_port_range"] = self.uiUDPEndPortSpinBox.value()
         VirtualBox.instance().setSettings(new_settings)

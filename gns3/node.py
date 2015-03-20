@@ -26,10 +26,13 @@ log = logging.getLogger(__name__)
 
 
 class Node(QtCore.QObject):
+
     """
     Node implementation.
 
+    :param module: Module instance
     :param server: client connection to a server
+    :param project: Project instance
     """
 
     # signals used to let the GUI know about some events.
@@ -40,10 +43,9 @@ class Node(QtCore.QObject):
     updated_signal = QtCore.Signal()
     deleted_signal = QtCore.Signal()
     delete_links_signal = QtCore.Signal()
-    idlepc_signal = QtCore.Signal()
     error_signal = QtCore.Signal(int, str)
     warning_signal = QtCore.Signal(int, str)
-    server_error_signal = QtCore.Signal(int, int, str)
+    server_error_signal = QtCore.Signal(int, str)
     nio_signal = QtCore.Signal(int, int)
     nio_cancel_signal = QtCore.Signal(int)
     allocate_udp_nio_signal = QtCore.Signal(int, int, int)
@@ -62,7 +64,7 @@ class Node(QtCore.QObject):
     end_devices = 2
     security_devices = 3
 
-    def __init__(self, server=None):
+    def __init__(self, module, server, project):
 
         super(Node, self).__init__()
 
@@ -70,7 +72,9 @@ class Node(QtCore.QObject):
         self._id = Node._instance_count
         Node._instance_count += 1
 
+        self._module = module
         self._server = server
+        self._project = project
         self._initialized = False
         self._status = 0
 
@@ -141,6 +145,15 @@ class Node(QtCore.QObject):
             return True
         return False
 
+    def module(self):
+        """
+        Returns this node module.
+
+        :returns: Module instance
+        """
+
+        return self._module
+
     def server(self):
         """
         Returns this node server.
@@ -149,6 +162,15 @@ class Node(QtCore.QObject):
         """
 
         return self._server
+
+    def project(self):
+        """
+        Returns this node project.
+
+        :returns: Project instance
+        """
+
+        return self._project
 
     def id(self):
         """
@@ -417,3 +439,76 @@ class Node(QtCore.QObject):
         """
 
         raise NotImplementedError()
+
+    def httpPost(self, path, callback, body={}, context={}):
+        """
+        POST on current server / project
+
+        :param path: Remote path
+        :param callback: callback method to call when the server replies
+        :param body: params to send (dictionary)
+        :param context: Pass a context to the response callback
+        """
+
+        self._project.post(self._server, path, callback, body=body, context=context)
+
+    def httpPut(self, path, callback, body={}, context={}):
+        """
+        PUT on current server / project
+
+        :param path: Remote path
+        :param callback: callback method to call when the server replies
+        :param body: params to send (dictionary)
+        :param context: Pass a context to the response callback
+        """
+
+        self._project.put(self._server, path, callback, body=body, context=context)
+
+    def httpGet(self, path, callback, context={}):
+        """
+        GET on current server / project
+
+        :param path: Remote path
+        :param callback: callback method to call when the server replies
+        :param context: Pass a context to the response callback
+        """
+
+        self._project.get(self._server, path, callback, context=context)
+
+    def httpDelete(self, path, callback, context={}):
+        """
+        DELETE on current server / project
+
+        :param path: Remote path
+        :param callback: callback method to call when the server replies
+        :param context: Pass a context to the response callback
+        """
+
+        self._project.delete(self._server, path, callback, context=context)
+
+    def allocateUDPPort(self, port_id):
+        """
+        Requests an UDP port allocation.
+
+        :param port_id: port identifier
+        """
+
+        log.debug("{} is requesting an UDP port allocation".format(self.name()))
+        self._server.post("/ports/udp", self._allocateUDPPortCallback, context={"port_id": port_id})
+
+    def _allocateUDPPortCallback(self, result, error=False, context={}, **kwargs):
+        """
+        Callback for allocateUDPPort.
+
+        :param result: server response (dict)
+        :param error: indicates an error (boolean)
+        """
+
+        if error:
+            log.error("error while allocating an UDP port for {}: {}".format(self.name(), result["message"]))
+            self.server_error_signal.emit(self.id(), result["message"])
+        else:
+            port_id = context["port_id"]
+            lport = result["udp_port"]
+            log.debug("{} has allocated UDP port {}".format(self.name(), port_id, lport))
+            self.allocate_udp_nio_signal.emit(self.id(), port_id, lport)

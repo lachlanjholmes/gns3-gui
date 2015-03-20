@@ -20,8 +20,13 @@ VirtualBox module implementation.
 """
 
 import os
+import sys
+import shutil
+
 from gns3.qt import QtCore, QtGui
-from gns3.node import Node
+from gns3.local_server_config import LocalServerConfig
+from gns3.local_config import LocalConfig
+
 from ..module import Module
 from ..module_error import ModuleError
 from .virtualbox_vm import VirtualBoxVM
@@ -33,6 +38,7 @@ log = logging.getLogger(__name__)
 
 
 class VirtualBox(Module):
+
     """
     VirtualBox module.
     """
@@ -43,83 +49,130 @@ class VirtualBox(Module):
         self._settings = {}
         self._virtualbox_vms = {}
         self._nodes = []
-        self._servers = []
-        self._working_dir = ""
-        self._virtualbox_vm_list = {}
 
         # load the settings
         self._loadSettings()
         self._loadVirtualBoxVMs()
 
-    def _loadSettings(self):
+    @staticmethod
+    def _findVBoxManage(self):
         """
-        Loads the settings from the persistent settings file.
+        Finds the VBoxManage path.
+
+        :return: path to VBoxManage
         """
 
-        # load the settings
+        if sys.platform.startswith("win"):
+            if "VBOX_INSTALL_PATH" in os.environ:
+                vboxmanage_path = os.path.join(os.environ["VBOX_INSTALL_PATH"], "VBoxManage.exe")
+            elif "VBOX_MSI_INSTALL_PATH" in os.environ:
+                vboxmanage_path = os.path.join(os.environ["VBOX_MSI_INSTALL_PATH"], "VBoxManage.exe")
+            else:
+                vboxmanage_path = "VBoxManage.exe"
+        elif sys.platform.startswith("darwin"):
+            vboxmanage_path = "/Applications/VirtualBox.app/Contents/MacOS/VBoxManage"
+        else:
+            vboxmanage_path = shutil.which("vboxmanage")
+
+        if vboxmanage_path is None:
+            return ""
+        return vboxmanage_path
+
+    def _loadSettings(self):
+        """
+        Loads the settings from the server settings file.
+        """
+
+        local_config = LocalConfig.instance()
+
+        # restore the VirtualBox settings from QSettings (for backward compatibility)
+        legacy_settings = {}
         settings = QtCore.QSettings()
         settings.beginGroup(self.__class__.__name__)
-        for name, value in VBOX_SETTINGS.items():
-            self._settings[name] = settings.value(name, value, type=VBOX_SETTING_TYPES[name])
+        for name in VBOX_SETTINGS.keys():
+            if settings.contains(name):
+                legacy_settings[name] = settings.value(name, type=VBOX_SETTING_TYPES[name])
+        settings.remove("")
         settings.endGroup()
+
+        if legacy_settings:
+            local_config.saveSectionSettings(self.__class__.__name__, legacy_settings)
+        self._settings = local_config.loadSectionSettings(self.__class__.__name__, VBOX_SETTINGS)
+
+        if not os.path.exists(self._settings["vboxmanage_path"]):
+            self._settings["vboxmanage_path"] = self._findVBoxManage(self)
+
+        # keep the config file sync
+        self._saveSettings()
 
     def _saveSettings(self):
         """
-        Saves the settings to the persistent settings file.
+        Saves the settings to the server settings file.
         """
 
         # save the settings
-        settings = QtCore.QSettings()
-        settings.beginGroup(self.__class__.__name__)
-        for name, value in self._settings.items():
-            settings.setValue(name, value)
-        settings.endGroup()
+        LocalConfig.instance().saveSectionSettings(self.__class__.__name__, self._settings)
+
+        # save some settings to the local server config file
+        server_settings = {
+            "vbox_user": self._settings["vbox_user"],
+        }
+
+        if self._settings["vboxmanage_path"]:
+            server_settings["vboxmanage_path"] = os.path.normpath(self._settings["vboxmanage_path"])
+
+        config = LocalServerConfig.instance()
+        config.saveSettings(self.__class__.__name__, server_settings)
 
     def _loadVirtualBoxVMs(self):
         """
-        Load the VirtualBox VMs from the persistent settings file.
+        Load the VirtualBox VMs from the client settings file.
         """
 
+        local_config = LocalConfig.instance()
+
+        # restore the VirtualBox settings from QSettings (for backward compatibility)
+        virtualbox_vms = []
         # load the settings
         settings = QtCore.QSettings()
         settings.beginGroup("VirtualBoxVMs")
-
         # load the VMs
         size = settings.beginReadArray("VM")
         for index in range(0, size):
             settings.setArrayIndex(index)
-            vmname = settings.value("vmname")
-            server = settings.value("server")
-            key = "{server}:{vmname}".format(server=server, vmname=vmname)
-            if key in self._virtualbox_vms or not vmname or not server:
-                continue
-            self._virtualbox_vms[key] = {}
+            vm = {}
             for setting_name, default_value in VBOX_VM_SETTINGS.items():
-                self._virtualbox_vms[key][setting_name] = settings.value(setting_name, default_value, VBOX_VM_SETTING_TYPES[setting_name])
-
+                vm[setting_name] = settings.value(setting_name, default_value, VBOX_VM_SETTING_TYPES[setting_name])
+            virtualbox_vms.append(vm)
         settings.endArray()
+        settings.remove("")
         settings.endGroup()
+
+        if virtualbox_vms:
+            local_config.saveSectionSettings(self.__class__.__name__, {"vms": virtualbox_vms})
+
+        settings = local_config.settings()
+        if "vms" in settings.get(self.__class__.__name__, {}):
+            for vm in settings[self.__class__.__name__]["vms"]:
+                vmname = vm.get("vmname")
+                server = vm.get("server")
+                key = "{server}:{vmname}".format(server=server, vmname=vmname)
+                if key in self._virtualbox_vms or not vmname or not server:
+                    continue
+                vm_settings = VBOX_VM_SETTINGS.copy()
+                vm_settings.update(vm)
+                self._virtualbox_vms[key] = vm_settings
+
+        # keep things sync
+        self._saveVirtualBoxVMs()
 
     def _saveVirtualBoxVMs(self):
         """
-        Saves the VirtualBox VMs to the persistent settings file.
+        Saves the VirtualBox VMs to the client settings file.
         """
 
         # save the settings
-        settings = QtCore.QSettings()
-        settings.beginGroup("VirtualBoxVMs")
-        settings.remove("")
-
-        # save the VirtualBox VMs
-        settings.beginWriteArray("VM", len(self._virtualbox_vms))
-        index = 0
-        for vbox_vm in self._virtualbox_vms.values():
-            settings.setArrayIndex(index)
-            for name, value in vbox_vm.items():
-                settings.setValue(name, value)
-            index += 1
-        settings.endArray()
-        settings.endGroup()
+        LocalConfig.instance().saveSectionSettings(self.__class__.__name__, {"vms": list(self._virtualbox_vms.values())})
 
     def virtualBoxVMs(self):
         """
@@ -139,60 +192,6 @@ class VirtualBox(Module):
 
         self._virtualbox_vms = new_virtualbox_vms.copy()
         self._saveVirtualBoxVMs()
-
-    def setProjectFilesDir(self, path):
-        """
-        Sets the project files directory path this module.
-
-        :param path: path to the local project files directory
-        """
-
-        self._working_dir = path
-        log.info("local working directory for VirtualBox module: {}".format(self._working_dir))
-
-        # update the server with the new working directory / project name
-        for server in self._servers:
-            if server.connected():
-                self._sendSettings(server)
-
-    def setImageFilesDir(self, path):
-        """
-        Sets the image files directory path this module.
-
-        :param path: path to the local image files directory
-        """
-
-        pass  # not used by this module
-
-    def addServer(self, server):
-        """
-        Adds a server to be used by this module.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("adding server {}:{} to VirtualBox module".format(server.host, server.port))
-        self._servers.append(server)
-        self._sendSettings(server)
-
-    def removeServer(self, server):
-        """
-        Removes a server from being used by this module.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("removing server {}:{} from VirtualBox module".format(server.host, server.port))
-        self._servers.remove(server)
-
-    def servers(self):
-        """
-        Returns all the servers used by this module.
-
-        :returns: list of WebSocketClient instances
-        """
-
-        return self._servers
 
     def addNode(self, node):
         """
@@ -229,73 +228,22 @@ class VirtualBox(Module):
         :param settings: module settings (dictionary)
         """
 
-        params = {}
-        for name, value in settings.items():
-            if name in self._settings and self._settings[name] != value:
-                params[name] = value
-
-        if params:
-            for server in self._servers:
-                # send the local working directory only if this is a local server
-                if server.isLocal():
-                    params.update({"working_dir": self._working_dir})
-                else:
-                    if "vboxmanage_path" in params:
-                        del params["vboxmanage_path"]  # do not send VBoxManage path to remote servers
-                    project_name = os.path.basename(self._working_dir)
-                    if project_name.endswith("-files"):
-                        project_name = project_name[:-6]
-                    params.update({"project_name": project_name})
-                server.send_notification("virtualbox.settings", params)
-
         self._settings.update(settings)
         self._saveSettings()
 
-    def _sendSettings(self, server):
-        """
-        Sends the module settings to the server.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("sending VirtualBox settings to server {}:{}".format(server.host, server.port))
-        params = self._settings.copy()
-
-        # send the local working directory only if this is a local server
-        if server.isLocal():
-            params.update({"working_dir": self._working_dir})
-        else:
-            if "vboxmanage_path" in params:
-                del params["vboxmanage_path"]  # do not send VBoxManage path to remote servers
-            project_name = os.path.basename(self._working_dir)
-            if project_name.endswith("-files"):
-                project_name = project_name[:-6]
-            params.update({"project_name": project_name})
-        server.send_notification("virtualbox.settings", params)
-
-    def createNode(self, node_class, server):
+    def createNode(self, node_class, server, project):
         """
         Creates a new node.
 
         :param node_class: Node object
-        :param server: WebSocketClient instance
+        :param server: HTTPClient instance
+        :param project: Project instance
         """
 
         log.info("creating node {}".format(node_class))
 
-        if not server.connected():
-            try:
-                log.info("reconnecting to server {}:{}".format(server.host, server.port))
-                server.reconnect()
-            except OSError as e:
-                raise ModuleError("Could not connect to server {}:{}: {}".format(server.host,
-                                                                                 server.port,
-                                                                                 e))
-        if server not in self._servers:
-            self.addServer(server)
-
         # create an instance of the node class
-        return node_class(self, server)
+        return node_class(self, server, project)
 
     def setupNode(self, node, node_name):
         """
@@ -336,79 +284,27 @@ class VirtualBox(Module):
                 vm = selected_vms[0]
 
         linked_base = self._virtualbox_vms[vm]["linked_base"]
-
         if not linked_base:
             for other_node in self._nodes:
                 if other_node.settings()["vmname"] == self._virtualbox_vms[vm]["vmname"] and \
                         (self._virtualbox_vms[vm]["server"] == "local" and other_node.server().isLocal() or self._virtualbox_vms[vm]["server"] == other_node.server().host):
                     raise ModuleError("Sorry a VirtualBox VM can only be used once in your topology (this will change in future versions)")
 
-        settings = {"adapters": self._virtualbox_vms[vm]["adapters"],
-                    "adapter_start_index": self._virtualbox_vms[vm]["adapter_start_index"],
-                    "adapter_type": self._virtualbox_vms[vm]["adapter_type"],
-                    "headless": self._virtualbox_vms[vm]["headless"],
-                    "enable_remote_console": self._virtualbox_vms[vm]["enable_remote_console"]}
+        settings = {}
+        for setting_name, value in self._virtualbox_vms[vm].items():
+            if setting_name in node.settings():
+                settings[setting_name] = value
 
         vmname = self._virtualbox_vms[vm]["vmname"]
-        node.setup(vmname, linked_clone=linked_base, initial_settings=settings)
+        node.setup(vmname, linked_clone=linked_base, additional_settings=settings)
 
     def reset(self):
         """
-        Resets the servers.
+        Resets the module.
         """
 
         log.info("VirtualBox module reset")
-        for server in self._servers:
-            if server.connected():
-                server.send_notification("virtualbox.reset")
-        self._servers.clear()
         self._nodes.clear()
-
-    def notification(self, destination, params):
-        """
-        To received notifications from the server.
-
-        :param destination: JSON-RPC method
-        :param params: JSON-RPC params
-        """
-
-        if "id" in params:
-            for node in self._nodes:
-                if node.id() == params["id"]:
-                    message = "node {}: {}".format(node.name(), params["message"])
-                    self.notification_signal.emit(message, params["details"])
-                    node.stop()
-
-    def getVirtualBoxVMsFromServer(self, server, callback):
-        """
-        Gets the VirtualBox VM list from a server.
-
-        :param server: server to send the request to
-        :param callback: callback for the reply from the server
-        """
-
-        if not server.connected():
-            try:
-                log.info("reconnecting to server {}:{}".format(server.host, server.port))
-                server.reconnect()
-            except OSError as e:
-                raise ModuleError("Could not connect to server {}:{}: {}".format(server.host,
-                                                                                 server.port,
-                                                                                 e))
-        params = {}
-        if server.isLocal():
-            params["vboxmanage_path"] = self._settings["vboxmanage_path"]
-            params["vbox_user"] = self._settings["vbox_user"]
-        server.send_message("virtualbox.vm_list", params, callback)
-
-    def getVirtualBoxVMList(self):
-        """
-        Returns the list of VirtualBox VMs
-
-        :return: dict
-        """
-
-        return self._virtualbox_vm_list
 
     @staticmethod
     def getNodeClass(name):

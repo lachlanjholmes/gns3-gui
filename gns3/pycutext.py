@@ -22,26 +22,10 @@ It is inspired by PyCute : http://gerard.vermeulen.free.fr
 
 import sys
 from .qt import QtCore, QtGui
-#from code import InteractiveInterpreter as Interpreter
 
-
-#===============================================================================
-# class MultipleRedirection:
-#     """ Dummy file which redirects stream to multiple file """
-#
-#     def __init__(self, files):
-#         """ The stream is redirect to the file list 'files' """
-#
-#         self.files = files
-#
-#     def write(self, str):
-#         """ Emulate write function """
-#
-#         for f in self.files:
-#             f.write(str)
-#===============================================================================
 
 class PyCutExt(QtGui.QTextEdit):
+
     """
     PyCute is a Python shell for PyQt.
 
@@ -68,7 +52,7 @@ class PyCutExt(QtGui.QTextEdit):
 
         # capture all interactive input/output
         sys.stdout = self
-        #sys.stderr = MultipleRedirection((sys.stderr, self))
+        # sys.stderr = MultipleRedirection((sys.stderr, self))
         sys.stdin = self
 
         # last line + last incomplete lines
@@ -232,6 +216,9 @@ class PyCutExt(QtGui.QTextEdit):
         text = e.text()
         key = e.key()
 
+        if e.modifiers() == QtCore.Qt.ControlModifier:
+            return super().keyPressEvent(e)
+
         # Keep the cursor after the last prompt.
         self.moveCursor(QtGui.QTextCursor.End)
 
@@ -300,9 +287,6 @@ class PyCutExt(QtGui.QTextEdit):
             self._insertText(text)
             return
 
-        else:
-            e.ignore()
-
     def _recall(self):
         """
         Display the current item from the command history.
@@ -357,6 +341,7 @@ class PyCutExt(QtGui.QTextEdit):
 
 
 class SyntaxColor(object):
+
     """
     Allows to color python keywords.
     """

@@ -29,6 +29,7 @@ from ..ui.iou_device_configuration_page_ui import Ui_iouDeviceConfigPageWidget
 
 
 class iouDeviceConfigurationPage(QtGui.QWidget, Ui_iouDeviceConfigPageWidget):
+
     """
     QWidget configuration page for IOU devices.
     """
@@ -176,8 +177,8 @@ class iouDeviceConfigurationPage(QtGui.QWidget, Ui_iouDeviceConfigPageWidget):
             del settings["console"]
 
         if not node:
-            initial_config = self.uiInitialConfigLineEdit.text()
-            if initial_config != settings["initial_config"]:
+            initial_config = self.uiInitialConfigLineEdit.text().strip()
+            if initial_config and initial_config != settings["initial_config"]:
                 if os.access(initial_config, os.R_OK):
                     settings["initial_config"] = initial_config
                 else:

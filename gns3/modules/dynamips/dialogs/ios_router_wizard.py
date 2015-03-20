@@ -22,18 +22,19 @@ Wizard for IOS routers.
 import sys
 import os
 import re
+import hashlib
 
+from functools import partial
 from gns3.qt import QtCore, QtGui
 from gns3.servers import Servers
 from gns3.node import Node
-from gns3.utils.message_box import MessageBox
 from gns3.utils.run_in_terminal import RunInTerminal
 from gns3.utils.get_resource import get_resource
 from gns3.utils.get_default_base_config import get_default_base_config
 
 from ....settings import ENABLE_CLOUD
 from ..ui.ios_router_wizard_ui import Ui_IOSRouterWizard
-from ..settings import PLATFORMS_DEFAULT_RAM, CHASSIS, ADAPTER_MATRIX, WIC_MATRIX
+from ..settings import PLATFORMS_DEFAULT_RAM, PLATFORMS_DEFAULT_NVRAM, DEFAULT_IDLEPC, CHASSIS, ADAPTER_MATRIX, WIC_MATRIX
 from .. import Dynamips
 from ..nodes.c1700 import C1700
 from ..nodes.c2600 import C2600
@@ -53,8 +54,11 @@ PLATFORM_TO_CLASS = {
     "c7200": C7200
 }
 
+import logging
+log = logging.getLogger(__name__)
 
 class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
+
     """
     Wizard to create an IOS router.
 
@@ -83,8 +87,8 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
 
         # Validate the Idle PC value
         self._idle_valid = False
-        idle_pc_rgx = QtCore.QRegExp("^(0x[0-9a-fA-F]+)?$")
-        validator = QtGui.QRegExpValidator(idle_pc_rgx)
+        idle_pc_rgx = QtCore.QRegExp("^(0x[0-9a-fA-F]{8})?$")
+        validator = QtGui.QRegExpValidator(idle_pc_rgx, self)
         self.uiIdlepcLineEdit.setValidator(validator)
         self.uiIdlepcLineEdit.textChanged.connect(self._idlePCValidateSlot)
         self.uiIdlepcLineEdit.textChanged.emit(self.uiIdlepcLineEdit.text())
@@ -94,7 +98,7 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
         self._base_private_config_template = get_resource(os.path.join("configs", "ios_base_private-config.txt"))
         self._base_etherswitch_startup_config_template = get_resource(os.path.join("configs", "ios_etherswitch_startup-config.txt"))
 
-        #FIXME: hide because of issue on Windows.
+        # FIXME: hide because of issue on Windows.
         self.uiTestIOSImagePushButton.hide()
 
         # Mandatory fields
@@ -187,9 +191,10 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
         """
         Slot to validate the entered Idle-PC Value
         """
-        sender = self.sender()
-        validator = sender.validator()
-        state = validator.validate(sender.text(), 0)[0]
+
+        validator = self.uiIdlepcLineEdit.validator()
+        text_input = self.uiIdlepcLineEdit.text()
+        state = validator.validate(text_input, len(text_input))[0]
         if state == QtGui.QValidator.Acceptable:
             color = '#A2C964'  # green
             self._idle_valid = True
@@ -199,22 +204,25 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
         else:
             color = '#f6989d'  # red
             self._idle_valid = False
-        sender.setStyleSheet('QLineEdit { background-color: %s }' % color)
+        self.uiIdlepcLineEdit.setStyleSheet('QLineEdit { background-color: %s }' % color)
 
     def _idlePCFinderSlot(self):
         """
         Slot for the idle-PC finder.
         """
 
-        server = Servers.instance().localServer()
+        from gns3.main_window import MainWindow
+        main_window = MainWindow.instance()
+        server = Servers.instance().getServerFromString(self.getSettings()["server"])
         module = Dynamips.instance()
         platform = self.uiPlatformComboBox.currentText()
         ios_image = self.uiIOSImageLineEdit.text()
         ram = self.uiRamSpinBox.value()
         router_class = PLATFORM_TO_CLASS[platform]
-        self._router = router_class(module, server)
-        self._router.setup(ios_image, ram, name="AUTOIDLEPC")
-        self._router.created_signal.connect(self.createdSlot)
+        router = router_class(module, server, main_window.project())
+        router.setup(ios_image, ram, name="AUTOIDLEPC")
+        callback = partial(self.createdSlot, router)
+        router.created_signal.connect(callback)
         self.uiIdlePCFinderPushButton.setEnabled(False)
 
     def _etherSwitchSlot(self, state):
@@ -226,25 +234,22 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
         if state:
             # forces the name to EtherSwitch
             self.uiNameLineEdit.setText("EtherSwitch router")
-            #self.uiNameLineEdit.setEnabled(False)
+            # self.uiNameLineEdit.setEnabled(False)
         else:
             self.uiNameLineEdit.setText(self.uiPlatformComboBox.currentText())
-            #self.uiNameLineEdit.setEnabled(True)
+            # self.uiNameLineEdit.setEnabled(True)
 
-    def createdSlot(self, node_id):
+    def createdSlot(self, router, node_id):
         """
         The node for the auto Idle-PC has been created.
 
+        :param router: IOS router instance
         :param node_id: not used
         """
 
-        self._router.computeAutoIdlepc(self._computeAutoIdlepcCallback)
-        self._auto_idlepc_progress_dialog = QtGui.QProgressDialog("Searching for an Idle-PC value...", "Cancel", 0, 0, parent=self)
-        self._auto_idlepc_progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
-        self._auto_idlepc_progress_dialog.setWindowTitle("Idle-PC finder")
-        self._auto_idlepc_progress_dialog.show()
+        router.computeAutoIdlepc(self._computeAutoIdlepcCallback)
 
-    def _computeAutoIdlepcCallback(self, result, error=False):
+    def _computeAutoIdlepcCallback(self, result, error=False, context=None, **kwargs):
         """
         Callback for computeAutoIdlepc.
 
@@ -252,19 +257,14 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
         :param error: indicates an error (boolean)
         """
 
-        self._router.delete()
-        if self._auto_idlepc_progress_dialog.wasCanceled():
-            return
-        self._auto_idlepc_progress_dialog.accept()
-
+        router = context["router"]
         if error:
-            QtGui.QMessageBox.critical(self, "Idle-PC finder", "Error: ".format(result["message"]))
+            QtGui.QMessageBox.critical(self, "Idle-PC finder", "Error: {}".format(result["message"]))
         else:
-            if result["idlepc"] and result["idlepc"] != "0x0":
-                self.uiIdlepcLineEdit.setText(result["idlepc"])
-            else:
-                logs = "\n".join(result["logs"])
-                MessageBox(self, "Idle-PC finder", "Could not find an Idle-PC value", details=logs)
+            idlepc = result["idlepc"]
+            self.uiIdlepcLineEdit.setText(idlepc)
+            QtGui.QMessageBox.information(self, "Idle-PC finder", "Idle-PC value {} has been found suitable for your IOS image".format(idlepc))
+        router.delete()
 
     def _iosImageBrowserSlot(self):
         """
@@ -326,7 +326,7 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
         for slot_number, slot_adapters in ADAPTER_MATRIX[platform][chassis].items():
             self._widget_slots[slot_number].setEnabled(True)
 
-            if type(slot_adapters) == str:
+            if isinstance(slot_adapters, str):
                 # only one default adapter for this slot.
                 self._widget_slots[slot_number].addItem(slot_adapters)
             else:
@@ -346,6 +346,17 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
                 wic_list = list(wics)
                 self._widget_wics[wic_number].addItems([""] + wic_list)
 
+    def _md5sum(self, filename):
+
+        with open(filename, 'rb') as fd:
+            m = hashlib.md5()
+            while True:
+                data = fd.read(8192)
+                if not data:
+                    break
+                m.update(data)
+            return m.hexdigest()
+
     def initializePage(self, page_id):
 
         if self.page(page_id) == self.uiServerWizardPage:
@@ -357,7 +368,6 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
             self.uiNameLineEdit.setText(self.uiPlatformComboBox.currentText())
             ios_image = self.uiIOSImageLineEdit.text()
             self.setWindowTitle("New IOS router - {}".format(os.path.basename(ios_image)))
-
         elif self.page(page_id) == self.uiMemoryWizardPage:
             # set the correct amount of RAM based on the platform
             from ..pages.ios_router_preferences_page import IOSRouterPreferencesPage
@@ -383,6 +393,16 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
             if self.uiEtherSwitchCheckBox.isChecked():
                 self.uiSlot1comboBox.setCurrentIndex(self.uiSlot1comboBox.findText("NM-16ESW"))
 
+        elif self.page(page_id) == self.uiIdlePCWizardPage:
+            path = self.uiIOSImageLineEdit.text()
+            if os.path.isfile(path):
+                try:
+                    md5sum = self._md5sum(path)
+                    if md5sum in DEFAULT_IDLEPC:
+                        self.uiIdlepcLineEdit.setText(DEFAULT_IDLEPC[md5sum])
+                except OSError:
+                    pass
+
     def validateCurrentPage(self):
         """
         Validates the IOS name and checks validation state for Idle-PC value
@@ -394,9 +414,10 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
                 if ios_router["name"] == name:
                     QtGui.QMessageBox.critical(self, "Name", "{} is already used, please choose another name".format(name))
                     return False
-                #if self.uiEtherSwitchCheckBox.isChecked() and ios_router["etherswitch"]:
-                #    QtGui.QMessageBox.critical(self, "EtherSwitch router", "A router has already been configured to be used as the EtherSwitch router".format(name))
-                #    return False
+        if self.currentPage() == self.uiMemoryWizardPage and self.uiPlatformComboBox.currentText() == "c7200":
+            if self.uiRamSpinBox.value() > 512:
+                QtGui.QMessageBox.critical(self, "c7200 RAM requirement", "c7200 routers with NPE-400 are limited to 512MB of RAM")
+                return False
         if self.currentPage() == self.uiIdlePCWizardPage:
             if not self._idle_valid:
                 idle_pc = self.uiIdlepcLineEdit.text()
@@ -425,18 +446,20 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
                 server = "{}:{}".format(server.host, server.port)
             else:
                 server = self.uiRemoteServersComboBox.currentText()
-        else: # Cloud is selected
+        else:  # Cloud is selected
             server = "cloud"
 
+        platform = self.uiPlatformComboBox.currentText()
         settings = {
             "name": self.uiNameLineEdit.text(),
             "path": path,
             "startup_config": get_default_base_config(self._base_startup_config_template),
             "private_config": get_default_base_config(self._base_private_config_template),
             "ram": self.uiRamSpinBox.value(),
+            "nvram": PLATFORMS_DEFAULT_NVRAM[platform],
             "idlepc": self.uiIdlepcLineEdit.text(),
             "image": image,
-            "platform": self.uiPlatformComboBox.currentText(),
+            "platform": platform,
             "chassis": self.uiChassisComboBox.currentText(),
             "server": server,
         }
@@ -445,6 +468,7 @@ class IOSRouterWizard(QtGui.QWizard, Ui_IOSRouterWizard):
             settings["startup_config"] = get_default_base_config(self._base_etherswitch_startup_config_template)
             settings["default_symbol"] = ":/symbols/multilayer_switch.normal.svg"
             settings["hover_symbol"] = ":/symbols/multilayer_switch.selected.svg"
+            settings["disk0"] = 1  # adds 1MB disk to store vlan.dat
             settings["category"] = Node.switches
 
         if image.lower().startswith("c7200p"):

@@ -17,7 +17,13 @@
 
 import sys
 import os
+import tempfile
 import pkg_resources
+
+try:
+    pkg_resources.set_extraction_path(tempfile.mkdtemp())
+except ValueError:
+    pass  # If the path is already set the module throw an error
 
 
 def get_resource(resource_name):

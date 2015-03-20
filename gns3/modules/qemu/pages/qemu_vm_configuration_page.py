@@ -37,6 +37,7 @@ from ..settings import QEMU_BINARIES_FOR_CLOUD
 
 
 class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
+
     """
     QWidget configuration page for QEMU VMs.
     """
@@ -48,6 +49,8 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
 
         self.uiHdaDiskImageToolButton.clicked.connect(self._hdaDiskImageBrowserSlot)
         self.uiHdbDiskImageToolButton.clicked.connect(self._hdbDiskImageBrowserSlot)
+        self.uiHdcDiskImageToolButton.clicked.connect(self._hdcDiskImageBrowserSlot)
+        self.uiHddDiskImageToolButton.clicked.connect(self._hddDiskImageBrowserSlot)
         self.uiInitrdToolButton.clicked.connect(self._initrdBrowserSlot)
         self.uiKernelImageToolButton.clicked.connect(self._kernelImageBrowserSlot)
         self.uiActivateCPUThrottlingCheckBox.stateChanged.connect(self._cpuThrottlingChangedSlot)
@@ -93,7 +96,7 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
     @staticmethod
     def getDiskImage(parent):
 
-        destination_directory = os.path.join(MainWindow.instance().settings()["images_path"], "QEMU")
+        destination_directory = os.path.join(MainWindow.instance().imagesDirPath(), "QEMU")
         path, _ = QtGui.QFileDialog.getOpenFileNameAndFilter(parent,
                                                              "Select a QEMU disk image",
                                                              destination_directory)
@@ -154,6 +157,26 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
             self.uiHdbDiskImageLineEdit.clear()
             self.uiHdbDiskImageLineEdit.setText(path)
 
+    def _hdcDiskImageBrowserSlot(self):
+        """
+        Slot to open a file browser and select a QEMU hdc disk image.
+        """
+
+        path = self.getDiskImage(self)
+        if path:
+            self.uiHdcDiskImageLineEdit.clear()
+            self.uiHdcDiskImageLineEdit.setText(path)
+
+    def _hddDiskImageBrowserSlot(self):
+        """
+        Slot to open a file browser and select a QEMU hdd disk image.
+        """
+
+        path = self.getDiskImage(self)
+        if path:
+            self.uiHddDiskImageLineEdit.clear()
+            self.uiHddDiskImageLineEdit.setText(path)
+
     def _initrdBrowserSlot(self):
         """
         Slot to open a file browser and select a QEMU initrd.
@@ -174,7 +197,7 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
             self.uiKernelImageLineEdit.clear()
             self.uiKernelImageLineEdit.setText(path)
 
-    def _getQemuBinariesFromServerCallback(self, result, error=False, qemu_path=None):
+    def _getQemuBinariesFromServerCallback(self, result, error=False, qemu_path=None, **kwargs):
         """
         Callback for getQemuBinariesFromServer.
 
@@ -182,15 +205,11 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
         :param error: indicates an error (boolean)
         """
 
-        if self._qemu_binaries_progress_dialog.wasCanceled():
-            return
-        self._qemu_binaries_progress_dialog.accept()
-
         if error:
             QtGui.QMessageBox.critical(self, "Qemu binaries", "Error: ".format(result["message"]))
         else:
             self.uiQemuListComboBox.clear()
-            for qemu in result["qemus"]:
+            for qemu in result:
                 if qemu["version"]:
                     self.uiQemuListComboBox.addItem("{path} (v{version})".format(path=qemu["path"], version=qemu["version"]), qemu["path"])
                 else:
@@ -246,16 +265,10 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
             for binary in QEMU_BINARIES_FOR_CLOUD:
                 self.uiQemuListComboBox.addItem("{path}".format(path=binary), binary)
         else:
-            self._qemu_binaries_progress_dialog = QtGui.QProgressDialog("Loading QEMU binaries", "Cancel", 0, 0, parent=self)
-            self._qemu_binaries_progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
-            self._qemu_binaries_progress_dialog.setWindowTitle("QEMU binaries")
-            self._qemu_binaries_progress_dialog.show()
-
             callback = partial(self._getQemuBinariesFromServerCallback, qemu_path=settings["qemu_path"])
             try:
                 Qemu.instance().getQemuBinariesFromServer(server, callback)
             except ModuleError as e:
-                self._qemu_binaries_progress_dialog.reject()
                 QtGui.QMessageBox.critical(self, "Qemu binaries", "Error while getting the QEMU binaries: {}".format(e))
                 self.uiQemuListComboBox.clear()
 
@@ -274,6 +287,8 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
                 self.uiMonitorPortSpinBox.hide()
             self.uiHdaDiskImageLineEdit.setText(settings["hda_disk_image"])
             self.uiHdbDiskImageLineEdit.setText(settings["hdb_disk_image"])
+            self.uiHdcDiskImageLineEdit.setText(settings["hdc_disk_image"])
+            self.uiHddDiskImageLineEdit.setText(settings["hdd_disk_image"])
             self.uiInitrdLineEdit.setText(settings["initrd"])
             self.uiKernelImageLineEdit.setText(settings["kernel_image"])
         else:
@@ -338,10 +353,12 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
                 settings["console"] = self.uiConsolePortSpinBox.value()
             if "monitor" in settings:
                 settings["monitor"] = self.uiMonitorPortSpinBox.value()
-            settings["hda_disk_image"] = self.uiHdaDiskImageLineEdit.text()
-            settings["hdb_disk_image"] = self.uiHdbDiskImageLineEdit.text()
-            settings["initrd"] = self.uiInitrdLineEdit.text()
-            settings["kernel_image"] = self.uiKernelImageLineEdit.text()
+            settings["hda_disk_image"] = self.uiHdaDiskImageLineEdit.text().strip()
+            settings["hdb_disk_image"] = self.uiHdbDiskImageLineEdit.text().strip()
+            settings["hdc_disk_image"] = self.uiHdcDiskImageLineEdit.text().strip()
+            settings["hdd_disk_image"] = self.uiHddDiskImageLineEdit.text().strip()
+            settings["initrd"] = self.uiInitrdLineEdit.text().strip()
+            settings["kernel_image"] = self.uiKernelImageLineEdit.text().strip()
 
         else:
             del settings["name"]
@@ -351,6 +368,8 @@ class QemuVMConfigurationPage(QtGui.QWidget, Ui_QemuVMConfigPageWidget):
                 del settings["monitor"]
             del settings["hda_disk_image"]
             del settings["hdb_disk_image"]
+            del settings["hdc_disk_image"]
+            del settings["hdd_disk_image"]
             del settings["initrd"]
             del settings["kernel_image"]
 

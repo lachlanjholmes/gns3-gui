@@ -16,13 +16,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-import shutil
 from ..qt import QtCore, QtGui
 from ..ui.new_project_dialog_ui import Ui_NewProjectDialog
 from ..settings import ENABLE_CLOUD
 
 
 class NewProjectDialog(QtGui.QDialog, Ui_NewProjectDialog):
+
     """
     New project dialog.
 
@@ -37,7 +37,7 @@ class NewProjectDialog(QtGui.QDialog, Ui_NewProjectDialog):
         self.setupUi(self)
 
         self._main_window = parent
-        self._project_settings = parent.projectSettings().copy()
+        self._project_settings = {}
         default_project_name = "untitled"
         self.uiNameLineEdit.setText(default_project_name)
         self.uiLocationLineEdit.setText(os.path.join(self._main_window.projectsDirPath(), default_project_name))
@@ -139,10 +139,7 @@ class NewProjectDialog(QtGui.QDialog, Ui_NewProjectDialog):
 
             self._project_settings["project_name"] = project_name
             self._project_settings["project_path"] = os.path.join(project_location, project_name + ".gns3")
-            self._project_settings["project_files_dir"] = os.path.join(project_location, project_name + "-files")
+            self._project_settings["project_files_dir"] = project_location
             self._project_settings["project_type"] = project_type
-
-            # delete all the project files
-            shutil.rmtree(self._project_settings["project_files_dir"], ignore_errors=True)
 
         QtGui.QDialog.done(self, result)

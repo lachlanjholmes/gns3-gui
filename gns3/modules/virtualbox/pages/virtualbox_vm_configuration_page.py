@@ -25,7 +25,8 @@ from gns3.dialogs.node_configurator_dialog import ConfigurationError
 from ..ui.virtualbox_vm_configuration_page_ui import Ui_virtualBoxVMConfigPageWidget
 
 
-class virtualBoxVMConfigurationPage(QtGui.QWidget, Ui_virtualBoxVMConfigPageWidget):
+class VirtualBoxVMConfigurationPage(QtGui.QWidget, Ui_virtualBoxVMConfigPageWidget):
+
     """
     QWidget configuration page for VirtualBox VMs.
     """
@@ -43,7 +44,7 @@ class virtualBoxVMConfigurationPage(QtGui.QWidget, Ui_virtualBoxVMConfigPageWidg
                                               "Intel PRO/1000 MT Server (82545EM)",
                                               "Paravirtualized Network (virtio-net)"])
 
-        #TODO: finish VM name change
+        # TODO: finish VM name change
         self.uiVMListLabel.hide()
         self.uiVMListComboBox.hide()
 
@@ -85,12 +86,14 @@ class virtualBoxVMConfigurationPage(QtGui.QWidget, Ui_virtualBoxVMConfigPageWidg
             self.uiVMListComboBox.hide()
 
         self.uiAdaptersSpinBox.setValue(settings["adapters"])
-        self.uiAdapterStartIndexSpinBox.setValue(settings["adapter_start_index"])
         index = self.uiAdapterTypesComboBox.findText(settings["adapter_type"])
         if index != -1:
             self.uiAdapterTypesComboBox.setCurrentIndex(index)
+        self.uiUseAnyAdapterCheckBox.setChecked(settings["use_any_adapter"])
+        self.uiVMRamSpinBox.setValue(settings["ram"])
         self.uiHeadlessModeCheckBox.setChecked(settings["headless"])
         self.uiEnableConsoleCheckBox.setChecked(settings["enable_remote_console"])
+
 
     def saveSettings(self, settings, node=None, group=False):
         """
@@ -125,21 +128,18 @@ class virtualBoxVMConfigurationPage(QtGui.QWidget, Ui_virtualBoxVMConfigPageWidg
             del settings["console"]
             del settings["enable_remote_console"]
 
-
+        settings["ram"] = self.uiVMRamSpinBox.value()
         settings["adapter_type"] = self.uiAdapterTypesComboBox.currentText()
         settings["headless"] = self.uiHeadlessModeCheckBox.isChecked()
+        settings["use_any_adapter"] = self.uiUseAnyAdapterCheckBox.isChecked()
 
         adapters = self.uiAdaptersSpinBox.value()
-        adapter_start_index = self.uiAdapterStartIndexSpinBox.value()
-
         if node:
-            if settings["adapters"] != adapters or settings["adapter_start_index"] != adapter_start_index:
+            if settings["adapters"] != adapters:
                 # check if the adapters settings have changed
                 node_ports = node.ports()
                 for node_port in node_ports:
                     if not node_port.isFree():
                         QtGui.QMessageBox.critical(self, node.name(), "Changing the number of adapters while links are connected isn't supported yet! Please delete all the links first.")
                         raise ConfigurationError()
-
-        settings["adapter_start_index"] = self.uiAdapterStartIndexSpinBox.value()
         settings["adapters"] = adapters

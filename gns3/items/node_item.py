@@ -24,6 +24,7 @@ from .note_item import NoteItem
 
 
 class NodeItem(QtSvg.QGraphicsSvgItem):
+
     """
     Node for the scene.
 
@@ -92,6 +93,10 @@ class NodeItem(QtSvg.QGraphicsSvgItem):
         # contains the last error message received
         # from the server.
         self._last_error = None
+
+        from ..main_window import MainWindow
+        self._main_window = MainWindow.instance()
+        self._settings = self._main_window.uiGraphicsView.settings()
 
     def defaultRenderer(self):
         """
@@ -255,13 +260,12 @@ class NodeItem(QtSvg.QGraphicsSvgItem):
             self.scene().removeItem(self)
         self.setUnsavedState()
 
-    def serverErrorSlot(self, node_id, code, message):
+    def serverErrorSlot(self, node_id, message):
         """
         Slot to receive events from the attached Node instance
         when the node has received an error from the server.
 
         :param node_id: node identifier
-        :param code: error code
         :param message: error message
         """
 
@@ -353,12 +357,12 @@ class NodeItem(QtSvg.QGraphicsSvgItem):
         # sort the ports
         ports_dict = {}
         for port in ports:
-            if port.slotNumber() is not None:
+            if port.adapterNumber() is not None:
                 # make the port number unique (special case with WICs).
                 port_number = port.portNumber()
                 if port_number >= 16:
                     port_number *= 4
-                ports_dict[(port.slotNumber() * 16) + port_number] = port
+                ports_dict[(port.adapterNumber() * 16) + port_number] = port
             elif port.portNumber()is not None:
                 ports_dict[port.portNumber()] = port
             else:
@@ -434,7 +438,8 @@ class NodeItem(QtSvg.QGraphicsSvgItem):
         """
 
         # don't show the selection rectangle
-        option.state = QtGui.QStyle.State_None
+        if not self._settings["draw_rectangle_selected_item"]:
+            option.state = QtGui.QStyle.State_None
         QtSvg.QGraphicsSvgItem.paint(self, painter, option, widget)
 
         if not self._initialized or self.show_layer:
@@ -486,10 +491,10 @@ class NodeItem(QtSvg.QGraphicsSvgItem):
         # dynamically change the renderer when this node item is hovered.
         if not self.isSelected():
             self.setSharedRenderer(self._hover_renderer)
-            #effect = QtGui.QGraphicsColorizeEffect()
-            #effect.setColor(QtGui.QColor("black"))
-            #effect.setStrength(0.8)
-            #self.setGraphicsEffect(effect)
+            # effect = QtGui.QGraphicsColorizeEffect()
+            # effect.setColor(QtGui.QColor("black"))
+            # effect.setStrength(0.8)
+            # self.setGraphicsEffect(effect)
 
     def hoverLeaveEvent(self, event):
         """
@@ -501,4 +506,4 @@ class NodeItem(QtSvg.QGraphicsSvgItem):
         # dynamically change the renderer back to the default when this node item is not hovered anymore.
         if not self.isSelected():
             self.setSharedRenderer(self._default_renderer)
-            #self.graphicsEffect().setEnabled(False)
+            # self.graphicsEffect().setEnabled(False)

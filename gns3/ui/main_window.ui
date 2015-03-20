@@ -236,7 +236,7 @@ background-none;
         </sizepolicy>
        </property>
        <property name="toolTip">
-        <string>Drag Node to Workspace (press SHIFT while dragging for multiple nodes).</string>
+        <string>Drag a node to the workspace (Press SHIFT while dragging to add multiple identical nodes).</string>
        </property>
        <property name="dragEnabled">
         <bool>false</bool>
@@ -1118,20 +1118,32 @@ background-none;
    <property name="text">
     <string>Backup project to cloud</string>
    </property>
+   <property name="visible">
+    <bool>false</bool>
+   </property>
   </action>
   <action name="uiImportProjectAction">
    <property name="text">
     <string>Restore backup from cloud</string>
+   </property>
+   <property name="visible">
+    <bool>false</bool>
    </property>
   </action>
   <action name="uiMoveLocalProjectToCloudAction">
    <property name="text">
     <string>Move local project to cloud</string>
    </property>
+   <property name="visible">
+    <bool>false</bool>
+   </property>
   </action>
   <action name="uiMoveCloudProjectToLocalAction">
    <property name="text">
     <string>Move cloud project to local</string>
+   </property>
+   <property name="visible">
+    <bool>false</bool>
    </property>
   </action>
   <action name="uiDarkStyleAction">

@@ -17,18 +17,25 @@ except AttributeError:
 
 try:
     _encoding = QtGui.QApplication.UnicodeUTF8
+
     def _translate(context, text, disambig):
         return QtGui.QApplication.translate(context, text, disambig, _encoding)
 except AttributeError:
     def _translate(context, text, disambig):
         return QtGui.QApplication.translate(context, text, disambig)
 
+
 class Ui_NewsDockWidget(object):
+
     def setupUi(self, NewsDockWidget):
         NewsDockWidget.setObjectName(_fromUtf8("NewsDockWidget"))
         NewsDockWidget.resize(203, 225)
         NewsDockWidget.setFloating(False)
+<<<<<<< HEAD
         NewsDockWidget.setFeatures(QtGui.QDockWidget.AllDockWidgetFeatures)
+=======
+        NewsDockWidget.setFeatures(QtGui.QDockWidget.DockWidgetFloatable | QtGui.QDockWidget.DockWidgetMovable)
+>>>>>>> upstream/master
         NewsDockWidget.setAllowedAreas(QtCore.Qt.AllDockWidgetAreas)
         self.dockWidgetContents = QtGui.QWidget()
         self.dockWidgetContents.setObjectName(_fromUtf8("dockWidgetContents"))

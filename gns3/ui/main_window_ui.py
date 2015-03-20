@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file '/home/grossmj/PycharmProjects/gns3-gui/gns3/ui/main_window.ui'
 #
-# Created: Mon Jan 12 16:49:09 2015
+# Created: Mon Mar  9 17:21:40 2015
 #      by: PyQt4 UI code generator 4.10.4
 #
 # WARNING! All changes made in this file will be lost!
@@ -407,12 +407,16 @@ class Ui_MainWindow(object):
         self.uiFitInViewAction = QtGui.QAction(MainWindow)
         self.uiFitInViewAction.setObjectName(_fromUtf8("uiFitInViewAction"))
         self.uiExportProjectAction = QtGui.QAction(MainWindow)
+        self.uiExportProjectAction.setVisible(False)
         self.uiExportProjectAction.setObjectName(_fromUtf8("uiExportProjectAction"))
         self.uiImportProjectAction = QtGui.QAction(MainWindow)
+        self.uiImportProjectAction.setVisible(False)
         self.uiImportProjectAction.setObjectName(_fromUtf8("uiImportProjectAction"))
         self.uiMoveLocalProjectToCloudAction = QtGui.QAction(MainWindow)
+        self.uiMoveLocalProjectToCloudAction.setVisible(False)
         self.uiMoveLocalProjectToCloudAction.setObjectName(_fromUtf8("uiMoveLocalProjectToCloudAction"))
         self.uiMoveCloudProjectToLocalAction = QtGui.QAction(MainWindow)
+        self.uiMoveCloudProjectToLocalAction.setVisible(False)
         self.uiMoveCloudProjectToLocalAction.setObjectName(_fromUtf8("uiMoveCloudProjectToLocalAction"))
         self.uiDarkStyleAction = QtGui.QAction(MainWindow)
         self.uiDarkStyleAction.setObjectName(_fromUtf8("uiDarkStyleAction"))
@@ -526,7 +530,7 @@ class Ui_MainWindow(object):
         self.uiToolsMenu.setTitle(_translate("MainWindow", "&Tools", None))
         self.uiGeneralToolBar.setWindowTitle(_translate("MainWindow", "General", None))
         self.uiNodesDockWidget.setWindowTitle(_translate("MainWindow", "Node Types", None))
-        self.uiNodesView.setToolTip(_translate("MainWindow", "Drag Node to Workspace (press SHIFT while dragging for multiple nodes).", None))
+        self.uiNodesView.setToolTip(_translate("MainWindow", "Drag a node to the workspace (Press SHIFT while dragging to add multiple identical nodes).", None))
         self.uiNodesView.headerItem().setText(0, _translate("MainWindow", "1", None))
         self.uiBrowsersToolBar.setWindowTitle(_translate("MainWindow", "Devices", None))
         self.uiControlToolBar.setWindowTitle(_translate("MainWindow", "Emulation", None))

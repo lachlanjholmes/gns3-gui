@@ -1,6 +1,13 @@
 GNS3-gui
 ========
 
+.. image:: https://travis-ci.org/GNS3/gns3-gui.svg?branch=master
+    :target: https://travis-ci.org/GNS3/gns3-gui
+
+.. image:: https://img.shields.io/pypi/v/gns3-gui.svg
+    :target: https://pypi.python.org/pypi/gns3-gui
+
+
 GNS3 GUI repository (beta stage).
 
 Linux (Debian based)
@@ -67,3 +74,13 @@ Finally, install both the GUI & server from the source.
    python3 setup.py install
 
 Or follow this `HOWTO that uses MacPorts <http://binarynature.blogspot.ca/2014/05/install-gns3-early-release-on-mac-os-x.html>`_.
+
+Developement
+-------------
+
+If you want to update the interface modify the .ui files using QT tools. And:
+
+.. code:: bash
+
+    cd scripts
+    python build_pyqt.py

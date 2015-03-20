@@ -19,6 +19,7 @@ import platform
 import sys
 import struct
 import inspect
+import datetime
 from .topology import Topology
 from .version import __version__
 from .console_cmd import ConsoleCmd
@@ -36,8 +37,9 @@ class ConsoleView(PyCutExt, ConsoleCmd):
 
         # Set introduction message
         bitness = struct.calcsize("P") * 8
+        current_year = datetime.date.today().year
         self.intro = "GNS3 management console. Running GNS3 version {} on {} ({}-bit).\n" \
-                     "Copyright (c) 2006-2014 GNS3 Technologies.".format(__version__, platform.system(), bitness)
+                     "Copyright (c) 2006-{} GNS3 Technologies.".format(__version__, platform.system(), bitness, current_year)
 
         # Parent class initialization
         try:
@@ -69,7 +71,7 @@ class ConsoleView(PyCutExt, ConsoleCmd):
         For exception handling purposes
         (see exception hook in the program entry point).
         """
-        
+
         return False
 
     def onKeyPress_Tab(self):
@@ -170,7 +172,7 @@ class ConsoleView(PyCutExt, ConsoleCmd):
         self.write(text, warning=True)
         self.write("\n")
 
-    def writeServerError(self, node_id, code, message):
+    def writeServerError(self, node_id, message):
         """
         Write server error messages coming from the server.
 
@@ -181,15 +183,15 @@ class ConsoleView(PyCutExt, ConsoleCmd):
 
         node = Topology.instance().getNode(node_id)
         server = name = ""
-        if node and node.name():
-            name = " {}:".format(node.name())
+        if node:
+            if node.name():
+                name = " {}:".format(node.name())
             server = "from {}:{}".format(node.server().host,
-                                    node.server().port)
+                                         node.server().port)
 
-        text = "Server error [{code}] {server}:{name} {message}".format(code=code,
-                                                                        server=server,
-                                                                        name=name,
-                                                                        message=message)
+        text = "Server error {server}:{name} {message}".format(server=server,
+                                                               name=name,
+                                                               message=message)
         self.write(text, error=True)
         self.write("\n")
 
@@ -203,12 +205,12 @@ class ConsoleView(PyCutExt, ConsoleCmd):
         self.pointer = 0
         if len(self.line):
             self.history.append(self.line)
-        try:
-            self.lines.append(self.line)
-            source = "\n".join(self.lines)
-            self.more = self.onecmd(source)
-        except Exception as e:
-            print("Unknown error: {}".format(e))
+            try:
+                self.lines.append(self.line)
+                source = "\n".join(self.lines)
+                self.more = self.onecmd(source)
+            except Exception as e:
+                print("Unknown error: {}".format(e))
 
         self.write(self.prompt)
         self.lines = []

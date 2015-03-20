@@ -21,8 +21,10 @@ Handles the saving and loading of a topology.
 """
 
 import os
+import json
+from .qt import QtGui, QtSvg
 
-from .qt import QtCore, QtGui, QtSvg
+from functools import partial
 from .items.node_item import NodeItem
 from .items.link_item import LinkItem
 from .items.note_item import NoteItem
@@ -71,7 +73,9 @@ class TopologyInstance:
         self.ssl_ca = ssl_ca
         self.ssl_ca_file = ssl_ca_file
 
+
 class Topology(object):
+
     """
     Topology.
     """
@@ -89,6 +93,27 @@ class Topology(object):
         self._resources_type = "local"
         self._instances = []
         self._auto_start = False
+        self._project = None
+
+    @property
+    def project(self):
+        """
+        Get topology project
+
+        :returns: Project instance
+        """
+
+        return self._project
+
+    @project.setter
+    def project(self, project):
+        """
+        Set topology project
+
+        :params project: Project
+        """
+
+        self._project = project
 
     def addNode(self, node):
         """
@@ -97,7 +122,7 @@ class Topology(object):
         :param node: Node instance
         """
 
-        #self._topology.add_node(node)
+        # self._topology.add_node(node)
         self._nodes.append(node)
 
     def removeNode(self, node):
@@ -129,7 +154,7 @@ class Topology(object):
         :param link: Link instance
         """
 
-        #self._topology.add_node(node)
+        # self._topology.add_node(node)
         self._links.append(link)
 
     def removeLink(self, link):
@@ -332,7 +357,7 @@ class Topology(object):
         Resets this topology.
         """
 
-        #self._topology.clear()
+        # self._topology.clear()
         self._links.clear()
         self._nodes.clear()
         self._notes.clear()
@@ -342,7 +367,7 @@ class Topology(object):
         self._initialized_nodes.clear()
         self._resources_type = "local"
         self._instances = []
-        log.info("topology has been reset")
+        log.info("Topology reset")
 
     def _dump_gui_settings(self, topology):
         """
@@ -354,7 +379,6 @@ class Topology(object):
         from .main_window import MainWindow
         main_window = MainWindow.instance()
         view = main_window.uiGraphicsView
-
         if "nodes" in topology["topology"]:
             for item in view.scene().items():
                 if isinstance(item, NodeItem):
@@ -373,14 +397,15 @@ class Topology(object):
                             if hover_symbol_path:
                                 node["hover_symbol"] = hover_symbol_path
                 if isinstance(item, LinkItem):
-                    for link in topology["topology"]["links"]:
-                        if link["id"] == item.link().id():
-                            source_port_label = item.sourcePort().label()
-                            destination_port_label = item.destinationPort().label()
-                            if source_port_label:
-                                link["source_port_label"] = source_port_label.dump()
-                            if destination_port_label:
-                                link["destination_port_label"] = destination_port_label.dump()
+                    if item.link() is not None:
+                        for link in topology["topology"]["links"]:
+                            if link["id"] == item.link().id():
+                                source_port_label = item.sourcePort().label()
+                                destination_port_label = item.destinationPort().label()
+                                if source_port_label:
+                                    link["source_port_label"] = source_port_label.dump()
+                                if destination_port_label:
+                                    link["destination_port_label"] = destination_port_label.dump()
 
         # notes
         if self._notes:
@@ -405,8 +430,9 @@ class Topology(object):
             topology_images = topology["topology"]["images"] = []
             for image in self._images:
                 image_info = image.dump()
-                if "path" in image_info:
-                    image_info["path"] = os.path.relpath(image_info["path"], main_window.projectSettings()["project_files_dir"])
+                image_in_default_dir = os.path.join(self._project.filesDir(), "project-files", "images", os.path.basename(image_info["path"]))
+                if os.path.exists(image_in_default_dir):
+                    image_info["path"] = os.path.join("images", os.path.basename(image_info["path"]))
                 topology_images.append(image_info)
 
     def dump(self, include_gui_data=True):
@@ -418,19 +444,18 @@ class Topology(object):
         :returns: topology representation
         """
 
-        log.info("starting to save the topology (version {})".format(__version__))
-
-        from .main_window import MainWindow
-        project_settings = MainWindow.instance().projectSettings()
-        topology = {"name": project_settings["project_name"],
+        log.info("Starting to save the topology (version {})".format(__version__))
+        topology = {"project_id": self._project.id(),
+                    "name": self._project.name(),
                     "version": __version__,
                     "type": "topology",
                     "topology": {},
                     "auto_start": False,
-                    "resources_type": project_settings["project_type"],
+                    "resources_type": self._project.type(),
+                    "revision": 3
                     }
 
-        self._resources_type = project_settings["project_type"]
+        self._resources_type = self._project.type()
 
         servers = {}
 
@@ -477,7 +502,29 @@ class Topology(object):
 
         return topology
 
-    def load(self, topology):
+    def loadFile(self, path, project):
+        """
+        Load a topology file
+
+        :param path: Path to topology directory
+        :param project: Project instance
+        """
+
+        log.debug("Start loading topology")
+        self._project = project
+
+        with open(path, "r") as f:
+            log.info("loading project: {}".format(path))
+            json_topology = json.load(f)
+
+        if "project_id" in json_topology:
+            self._project.setId(json_topology["project_id"])
+        self._project.setName(json_topology.get("name", "unnamed"))
+        self._project.setType(json_topology["resources_type"])
+        self._project.setTopologyFile(path)
+        self._load(json_topology)
+
+    def _load(self, topology):
         """
         Loads a topology.
 
@@ -486,6 +533,7 @@ class Topology(object):
 
         from .main_window import MainWindow
         main_window = MainWindow.instance()
+        main_window.setProject(self._project)
         view = main_window.uiGraphicsView
 
         topology_file_errors = []
@@ -498,8 +546,8 @@ class Topology(object):
 
         # deactivate the unsaved state support
         main_window.ignoreUnsavedState(True)
-        # trick: no matter what, reactivate the unsaved state support after 3 seconds
-        QtCore.QTimer.singleShot(3000, self._reactivateUnsavedState)
+        # trick: no matter what, reactivate the unsaved state support after 5 seconds
+        main_window.run_later(5000, self._reactivateUnsavedState)
 
         self._node_to_links_mapping = {}
         # create a mapping node ID to links
@@ -532,6 +580,7 @@ class Topology(object):
                     self._servers[topology_server["id"]] = server_manager.getRemoteServer(host, port)
 
         # nodes
+        self._load_old_topology = False
         if "nodes" in topology["topology"]:
             topology_nodes = {}
             nodes = topology["topology"]["nodes"]
@@ -565,7 +614,7 @@ class Topology(object):
                         topology_file_errors.append("No server reference for node ID {}".format(topology_node["id"]))
                         continue
 
-                    node = node_module.createNode(node_class, server)
+                    node = node_module.createNode(node_class, server, self._project)
                     node.error_signal.connect(main_window.uiConsoleTextEdit.writeError)
                     node.warning_signal.connect(main_window.uiConsoleTextEdit.writeWarning)
                     node.server_error_signal.connect(main_window.uiConsoleTextEdit.writeServerError)
@@ -577,7 +626,10 @@ class Topology(object):
                 node.setId(topology_node["id"])
 
                 # we want to know when the node has been created
-                node.created_signal.connect(self._nodeCreatedSlot)
+                callback = partial(self._nodeCreatedSlot, topology)
+                node.created_signal.connect(callback)
+
+                self.addNode(node)
 
                 # load the settings
                 node.load(topology_node)
@@ -613,7 +665,6 @@ class Topology(object):
                         node_item.setHoverRenderer(hover_renderer)
 
                 view.scene().addItem(node_item)
-                self.addNode(node)
                 main_window.uiTopologySummaryTreeWidget.addNode(node)
 
         self._resources_type = topology.get("resources_type")
@@ -645,16 +696,38 @@ class Topology(object):
                 view.scene().addItem(ellipse_item)
                 self.addEllipse(ellipse_item)
 
+        # instances
+        if "instances" in topology["topology"]:
+            instances = topology["topology"]["instances"]
+            for instance in instances:
+                self.addInstance(instance["name"], instance["id"], instance["size_id"],
+                                 instance["image_id"],
+                                 instance["private_key"], instance["public_key"])
+
+        if topology_file_errors:
+            errors = "\n".join(topology_file_errors)
+            MessageBox(main_window, "Topology", "Errors detected while importing the topology", errors)
+        log.debug("Finish loading topology")
+
+    def _load_images(self, topology):
+
+        from .main_window import MainWindow
+        main_window = MainWindow.instance()
+        view = main_window.uiGraphicsView
+        topology_file_errors = []
+
         # images
         if "images" in topology["topology"]:
             images = topology["topology"]["images"]
             for topology_image in images:
-
-                updated_image_path = os.path.join(main_window.projectSettings()["project_files_dir"], topology_image["path"])
-                if os.path.isfile(updated_image_path):
+                updated_image_path = os.path.join(self._project.filesDir(), "project-files", topology_image["path"])
+                if os.path.exists(updated_image_path):
                     image_path = updated_image_path
                 else:
                     image_path = topology_image["path"]
+
+                image_path = os.path.normpath(image_path)
+                print(image_path)
                 if not os.path.isfile(image_path):
                     topology_file_errors.append("Path to image {} doesn't exist".format(image_path))
                     continue
@@ -669,19 +742,11 @@ class Topology(object):
                 view.scene().addItem(image_item)
                 self.addImage(image_item)
 
-        # instances
-        if "instances" in topology["topology"]:
-            instances = topology["topology"]["instances"]
-            for instance in instances:
-                self.addInstance(instance["name"], instance["id"], instance["size_id"],
-                                 instance["image_id"],
-                                 instance["private_key"], instance["public_key"])
-
         if topology_file_errors:
             errors = "\n".join(topology_file_errors)
             MessageBox(main_window, "Topology", "Errors detected while importing the topology", errors)
 
-    def _nodeCreatedSlot(self, node_id):
+    def _nodeCreatedSlot(self, topology, node_id):
         """
         Slot to know when a node has been created.
         When all nodes have initialized, links can be created.
@@ -691,12 +756,12 @@ class Topology(object):
 
         node = self.getNode(node_id)
         if not node or not node.initialized():
-            log.warn("cannot find node or node not initialized")
+            log.warn("Cannot find node {node_id} or node not initialized".format(node_id=node_id))
             return
 
         from .main_window import MainWindow
-        view = MainWindow.instance().uiGraphicsView
-
+        main_window = MainWindow.instance()
+        view = main_window.uiGraphicsView
         log.debug("node {} has initialized".format(node.name()))
         self._initialized_nodes.append(node_id)
 
@@ -738,6 +803,13 @@ class Topology(object):
         if self._auto_start and hasattr(node, "start"):
             node.start()
 
+        # We save at the end of initialization process in order to upgrade old topologies
+        if len(topology["topology"]["nodes"]) == len(self._initialized_nodes):
+            self._load_images(topology)
+            if "project_id" not in topology:
+                log.info("Saving converted topology...")
+                main_window.saveProject(self._project.topologyFile())
+
     def _createPortLabel(self, node, label_info):
         """
         Creates a port label.
@@ -749,8 +821,8 @@ class Topology(object):
         """
 
         from .main_window import MainWindow
-        view = MainWindow.instance().uiGraphicsView
-
+        main_window = MainWindow.instance()
+        view = main_window.uiGraphicsView
         for item in view.scene().items():
             if isinstance(item, NodeItem) and node.id() == item.node().id():
                 port_label = NoteItem(item)
@@ -766,7 +838,8 @@ class Topology(object):
         """
 
         from .main_window import MainWindow
-        MainWindow.instance().ignoreUnsavedState(False)
+        main_window = MainWindow.instance()
+        main_window.ignoreUnsavedState(False)
 
     def __str__(self):
 

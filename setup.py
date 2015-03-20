@@ -28,7 +28,7 @@ class Tox(TestCommand):
         self.test_suite = True
 
     def run_tests(self):
-        #import here, cause outside the eggs aren't loaded
+        # import here, cause outside the eggs aren't loaded
         import tox
         errcode = tox.cmdline(self.test_args)
         sys.exit(errcode)
@@ -45,17 +45,17 @@ setup(
     description="GNS3 graphical interface for the GNS3 server.",
     long_description=open("README.rst", "r").read(),
     install_requires=[
-        "ws4py>=0.3.4",
         "apache-libcloud>=0.14.1",
-        "requests",
-        "paramiko",
-        "gns3-converter"
+        "requests==2.4.3",
+        "paramiko==1.15.1",
+        "gns3-converter",
+        "raven==5.2.0"
     ],
     entry_points={
         "gui_scripts": [
             "gns3 = gns3.main:main",
-            ]
-        },
+        ]
+    },
     packages=find_packages(),
     include_package_data=True,
     package_data={"gns3": ["configs/*.txt"]},
@@ -73,5 +73,5 @@ setup(
         "Programming Language :: Python :: 3.3",
         "Programming Language :: Python :: 3.4",
         "Programming Language :: Python :: Implementation :: CPython",
-        ],
+    ],
 )

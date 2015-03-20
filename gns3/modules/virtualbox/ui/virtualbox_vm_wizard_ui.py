@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file '/home/grossmj/PycharmProjects/gns3-gui/gns3/modules/virtualbox/ui/virtualbox_vm_wizard.ui'
 #
-# Created: Tue Dec  2 14:17:34 2014
+# Created: Fri Mar 13 11:09:58 2015
 #      by: PyQt4 UI code generator 4.10.4
 #
 # WARNING! All changes made in this file will be lost!
@@ -92,7 +92,7 @@ class Ui_VirtualBoxVMWizard(object):
         QtCore.QMetaObject.connectSlotsByName(VirtualBoxVMWizard)
 
     def retranslateUi(self, VirtualBoxVMWizard):
-        VirtualBoxVMWizard.setWindowTitle(_translate("VirtualBoxVMWizard", "New VirtualBox VM", None))
+        VirtualBoxVMWizard.setWindowTitle(_translate("VirtualBoxVMWizard", "New VirtualBox VM template", None))
         self.uiServerWizardPage.setTitle(_translate("VirtualBoxVMWizard", "Server", None))
         self.uiServerWizardPage.setSubTitle(_translate("VirtualBoxVMWizard", "Please choose a server type to run your new VirtualBox VM.", None))
         self.uiServerTypeGroupBox.setTitle(_translate("VirtualBoxVMWizard", "Server type", None))

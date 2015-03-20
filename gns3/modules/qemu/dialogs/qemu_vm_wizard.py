@@ -25,7 +25,6 @@ from gns3.qt import QtCore, QtGui
 from gns3.servers import Servers
 from gns3.node import Node
 from gns3.modules.module_error import ModuleError
-from gns3.utils.connect_to_server import ConnectToServer
 from gns3.settings import ENABLE_CLOUD
 
 from .. import Qemu
@@ -35,6 +34,7 @@ from ..settings import QEMU_BINARIES_FOR_CLOUD
 
 
 class QemuVMWizard(QtGui.QWizard, Ui_QemuVMWizard):
+
     """
     Wizard to create a Qemu VM.
 
@@ -62,7 +62,7 @@ class QemuVMWizard(QtGui.QWizard, Ui_QemuVMWizard):
         self.uiTypeComboBox.addItems(["Default", "IOSv", "IOSv-L2", "ASA 8.4(2)", "IDS"])
 
         # Mandatory fields
-        self.uiNameTypeWizardPage.registerField("vm_name*", self.uiNameLineEdit)
+        self.uiNameWizardPage.registerField("vm_name*", self.uiNameLineEdit)
         self.uiDiskWizardPage.registerField("hda_disk_image*", self.uiHdaDiskImageLineEdit)
         self.uiDiskImageHdbWizardPage.registerField("hdb_disk_image*", self.uiHdbDiskImageLineEdit)
         self.uiASAWizardPage.registerField("initrd*", self.uiInitrdLineEdit)
@@ -174,11 +174,9 @@ class QemuVMWizard(QtGui.QWizard, Ui_QemuVMWizard):
                         QtGui.QMessageBox.critical(self, "Remote server", "There is no remote server registered in QEMU preferences")
                         return False
                     server = self.uiRemoteServersComboBox.itemData(self.uiRemoteServersComboBox.currentIndex())
-                if not server.connected() and ConnectToServer(self, server) is False:
-                    return False
                 self._server = server
 
-        if self.currentPage() == self.uiNameTypeWizardPage:
+        if self.currentPage() == self.uiNameWizardPage:
             name = self.uiNameLineEdit.text()
             for qemu_vm in self._qemu_vms.values():
                 if qemu_vm["name"] == name:
@@ -207,17 +205,12 @@ class QemuVMWizard(QtGui.QWizard, Ui_QemuVMWizard):
                 if index != -1:
                     self.uiQemuListComboBox.setCurrentIndex(index)
             else:
-                self._qemu_binaries_progress_dialog = QtGui.QProgressDialog("Loading QEMU binaries", "Cancel", 0, 0, parent=self)
-                self._qemu_binaries_progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
-                self._qemu_binaries_progress_dialog.setWindowTitle("QEMU binaries")
-                self._qemu_binaries_progress_dialog.show()
                 try:
                     Qemu.instance().getQemuBinariesFromServer(self._server, self._getQemuBinariesFromServerCallback)
                 except ModuleError as e:
-                    self._qemu_binaries_progress_dialog.reject()
                     QtGui.QMessageBox.critical(self, "Qemu binaries", "Error while getting the QEMU binaries: {}".format(e))
 
-    def _getQemuBinariesFromServerCallback(self, result, error=False):
+    def _getQemuBinariesFromServerCallback(self, result, error=False, **kwargs):
         """
         Callback for getQemuBinariesFromServer.
 
@@ -225,24 +218,20 @@ class QemuVMWizard(QtGui.QWizard, Ui_QemuVMWizard):
         :param error: indicates an error (boolean)
         """
 
-        if self._qemu_binaries_progress_dialog.wasCanceled():
-            return
-        self._qemu_binaries_progress_dialog.accept()
-
         if error:
             QtGui.QMessageBox.critical(self, "Qemu binaries", "{}".format(result["message"]))
         else:
             self.uiQemuListComboBox.clear()
-            for qemu in result["qemus"]:
+            for qemu in result:
                 if qemu["version"]:
                     self.uiQemuListComboBox.addItem("{path} (v{version})".format(path=qemu["path"], version=qemu["version"]), qemu["path"])
                 else:
                     self.uiQemuListComboBox.addItem("{path}".format(path=qemu["path"]), qemu["path"])
 
-            is_64bit = sys.maxsize > 2**32
+            is_64bit = sys.maxsize > 2 ** 32
             if sys.platform.startswith("win"):
                 if self.uiTypeComboBox.currentText() != "Default" and (Qemu.instance().settings()["use_local_server"] or self.uiLocalRadioButton.isChecked()):
-                    search_string = "qemu.exe"
+                    search_string = r"qemu-0.13.0\qemu-system-i386w.exe"
                 elif is_64bit:
                     # default is qemu-system-x86_64w.exe on Windows 64-bit with a remote server
                     search_string = "x86_64w.exe"
@@ -273,9 +262,8 @@ class QemuVMWizard(QtGui.QWizard, Ui_QemuVMWizard):
             server = "local"
         elif self.uiRemoteRadioButton.isChecked():
             server = self.uiRemoteServersComboBox.currentText()
-        else: # Cloud is selected
+        else:  # Cloud is selected
             server = "cloud"
-
 
         qemu_path = self.uiQemuListComboBox.itemData(self.uiQemuListComboBox.currentIndex())
         settings = {
@@ -321,15 +309,15 @@ class QemuVMWizard(QtGui.QWizard, Ui_QemuVMWizard):
             settings["hda_disk_image"] = self.uiHdaDiskImageLineEdit.text()
             settings["category"] = Node.end_devices
 
-        if self.uiTypeComboBox.currentText() != "Default":
-            if not "options" in settings:
-                settings["options"] = ""
-            if server == "local" and (sys.platform.startswith("win") and qemu_path.endswith("qemu.exe")) or (sys.platform.startswith("darwin") and "GNS3.app" in qemu_path):
-                settings["options"] += " -vga none -vnc none"
-                settings["legacy_networking"] = True
-            else:
-                settings["options"] += " -nographic"
-            settings["options"] = settings["options"].strip()
+        if "options" not in settings:
+            settings["options"] = ""
+        if server == "local" and (sys.platform.startswith("win") and qemu_path.endswith(r"qemu-0.13.0\qemu-system-i386w.exe")) or \
+                (sys.platform.startswith("darwin") and "GNS3.app" in qemu_path):
+            settings["options"] += " -vga none -vnc none"
+            settings["legacy_networking"] = True
+        else:
+            settings["options"] += " -nographic"
+        settings["options"] = settings["options"].strip()
 
         return settings
 
@@ -339,7 +327,7 @@ class QemuVMWizard(QtGui.QWizard, Ui_QemuVMWizard):
         """
 
         current_id = self.currentId()
-        if self.page(current_id) == self.uiNameTypeWizardPage:
+        if self.page(current_id) == self.uiTypeWizardPage:
 
             if self.uiTypeComboBox.currentText().startswith("IOSv"):
                 self.uiRamSpinBox.setValue(384)

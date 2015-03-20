@@ -27,6 +27,7 @@ log = logging.getLogger(__name__)
 
 
 class NewsDockWidget(QtGui.QDockWidget, Ui_NewsDockWidget):
+
     """
     :param parent: parent widget
     """
@@ -39,11 +40,12 @@ class NewsDockWidget(QtGui.QDockWidget, Ui_NewsDockWidget):
         self._visible = True
         self.visibilityChanged.connect(self._visibilityChangedSlot)
         self.uiWebView.page().setLinkDelegationPolicy(QtWebKit.QWebPage.DelegateAllLinks)
+        self.uiWebView.page().mainFrame().setScrollBarPolicy(QtCore.Qt.Vertical, QtCore.Qt.ScrollBarAlwaysOff)
         self.uiWebView.linkClicked.connect(self._urlClickedSlot)
         self.uiWebView.loadFinished.connect(self._loadFinishedSlot)
         self._refresh_timer = QtCore.QTimer(self)
         self._refresh_timer.timeout.connect(self._refreshSlot)
-        self._refresh_timer.start(60000)
+        self._refresh_timer.start(300000)
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._loadFinishedSlot)
         self._timer.setSingleShot(True)

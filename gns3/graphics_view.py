@@ -39,7 +39,7 @@ from .dialogs.style_editor_dialog import StyleEditorDialog
 from .dialogs.text_editor_dialog import TextEditorDialog
 from .dialogs.symbol_selection_dialog import SymbolSelectionDialog
 from .dialogs.idlepc_dialog import IdlePCDialog
-from .utils.connect_to_server import ConnectToServer
+from .local_config import LocalConfig
 
 # link items
 from .items.link_item import LinkItem
@@ -57,6 +57,7 @@ log = logging.getLogger(__name__)
 
 
 class GraphicsView(QtGui.QGraphicsView):
+
     """
     Graphics view that displays the scene.
 
@@ -124,45 +125,26 @@ class GraphicsView(QtGui.QGraphicsView):
         # clear all objects on the scene
         self.scene().clear()
 
-    def updateProjectFilesDir(self, path):
-        """
-        Updates the project files directory path for all modules.
-
-        :param path: path to the local project files directory.
-        """
-
-        try:
-            for module in MODULES:
-                instance = module.instance()
-                instance.setProjectFilesDir(path)
-        except ModuleError as e:
-            QtGui.QMessageBox.critical(self, "Local projects directory", "{}".format(e))
-
-    def updateImageFilesDir(self, path):
-        """
-        Updates the image files directory path for all modules.
-
-        :param path: path to the local images files directory.
-        """
-
-        try:
-            for module in MODULES:
-                instance = module.instance()
-                instance.setImageFilesDir(path)
-        except ModuleError as e:
-            QtGui.QMessageBox.critical(self, "Local images directory", "{}".format(e))
-
     def _loadSettings(self):
         """
         Loads the settings from the persistent settings file.
         """
 
-        # restore settings
+        local_config = LocalConfig.instance()
+        # restore the graphics view settings from QSettings (for backward compatibility)
+        legacy_settings = {}
         settings = QtCore.QSettings()
         settings.beginGroup(self.__class__.__name__)
-        for name, value in GRAPHICS_VIEW_SETTINGS.items():
-            self._settings[name] = settings.value(name, value, type=GRAPHICS_VIEW_SETTING_TYPES[name])
+        for name in GRAPHICS_VIEW_SETTINGS.keys():
+            if settings.contains(name):
+                legacy_settings[name] = settings.value(name, type=GRAPHICS_VIEW_SETTING_TYPES[name])
+        settings.remove("")
         settings.endGroup()
+
+        if legacy_settings:
+            local_config.saveSectionSettings(self.__class__.__name__, legacy_settings)
+
+        self._settings = local_config.loadSectionSettings(self.__class__.__name__, GRAPHICS_VIEW_SETTINGS)
 
     def settings(self):
         """
@@ -182,11 +164,7 @@ class GraphicsView(QtGui.QGraphicsView):
 
         # save the settings
         self._settings.update(new_settings)
-        settings = QtCore.QSettings()
-        settings.beginGroup(self.__class__.__name__)
-        for name, value in self._settings.items():
-            settings.setValue(name, value)
-        settings.endGroup()
+        LocalConfig.instance().saveSectionSettings(self.__class__.__name__, self._settings)
 
     def addingLinkSlot(self, enabled):
         """
@@ -462,7 +440,7 @@ class GraphicsView(QtGui.QGraphicsView):
                 item.setSelected(True)
         elif is_not_link and event.button() == QtCore.Qt.RightButton and not self._adding_link:
             if item:
-                #Prevent right clicking on a selected item from de-selecting all other items
+                # Prevent right clicking on a selected item from de-selecting all other items
                 if not item.isSelected():
                     if not event.modifiers() & QtCore.Qt.ControlModifier:
                         for it in self.scene().items():
@@ -754,7 +732,7 @@ class GraphicsView(QtGui.QGraphicsView):
             capture_action.triggered.connect(self.captureActionSlot)
             menu.addAction(capture_action)
 
-        if True in list(map(lambda item: isinstance(item, NodeItem) and hasattr(item.node(), "idlepcs"), items)):
+        if True in list(map(lambda item: isinstance(item, NodeItem) and hasattr(item.node(), "idlepc"), items)):
             idlepc_action = QtGui.QAction("Idle-PC", menu)
             idlepc_action.setIcon(QtGui.QIcon(':/icons/calculate.svg'))
             idlepc_action.triggered.connect(self.idlepcActionSlot)
@@ -804,6 +782,17 @@ class GraphicsView(QtGui.QGraphicsView):
 
         # item must have no parent
         if True in list(map(lambda item: item.parentItem() is None, items)):
+
+            if len(items) > 1:
+                horizontal_align_action = QtGui.QAction("Align horizontally", menu)
+                horizontal_align_action.setIcon(QtGui.QIcon(':/icons/horizontally.svg'))
+                horizontal_align_action.triggered.connect(self.horizontalAlignmentSlot)
+                menu.addAction(horizontal_align_action)
+
+                vertical_align_action = QtGui.QAction("Align vertically", menu)
+                vertical_align_action.setIcon(QtGui.QIcon(':/icons/vertically.svg'))
+                vertical_align_action.triggered.connect(self.verticalAlignmentSlot)
+                menu.addAction(vertical_align_action)
 
             raise_layer_action = QtGui.QAction("Raise one layer", menu)
             raise_layer_action.setIcon(QtGui.QIcon(':/icons/raise_z_value.svg'))
@@ -934,6 +923,9 @@ class GraphicsView(QtGui.QGraphicsView):
             name = node.name()
             if aux:
                 console_port = node.auxConsole()
+                if console_port is None:
+                    QtGui.QMessageBox.critical(self, "Console", "AUX console port not allocated for {}".format(name))
+                    return False
             else:
                 console_port = node.console()
             console_host = node.server().host
@@ -1087,53 +1079,46 @@ class GraphicsView(QtGui.QGraphicsView):
             QtGui.QMessageBox.critical(self, "Idle-PC", "Please select only one router")
             return
         item = items[0]
-        if isinstance(item, NodeItem) and hasattr(item.node(), "idlepcs") and item.node().initialized():
+        if isinstance(item, NodeItem) and hasattr(item.node(), "idlepc") and item.node().initialized():
             router = item.node()
-            idlepc = router.idlepc()
-            router.computeIdlepcs()
+            #question = QtGui.QMessageBox.question(self, "Auto Idle-PC", "Would you like to automatically find a suitable Idle-PC value (but not optimal)?", QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
 
-            #TODO: improve to show progress over 10 seconds
-            self._idlepc_progress_dialog = QtGui.QProgressDialog("Computing values...", "Cancel", 0, 0, parent=self)
-            self._idlepc_progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
-            self._idlepc_progress_dialog.setWindowTitle("Idle-PC")
+            #if question == QtGui.QMessageBox.Yes:
+            #    router.computeAutoIdlepc(self._autoIdlepcCallback)
+            #else:
+            router.computeIdlepcs(self._idlepcCallback)
 
-            def cancel():
-                router.idlepc_signal.disconnect(self._showIdlepcProposals)
-                router.server_error_signal.disconnect(self._showIdlepcError)
-                router.setIdlepc(idlepc)
-
-            self._idlepc_progress_dialog.canceled.connect(cancel)
-            router.idlepc_signal.connect(self._showIdlepcProposals)
-            router.server_error_signal.connect(self._showIdlepcError)
-            self._idlepc_progress_dialog.show()
-
-    def _showIdlepcError(self, node_id, code, message):
+    def _idlepcCallback(self, result, error=False, context={}, **kwargs):
         """
-        Shows an error message if the Idle-PC values cannot be computed.
+        Slot to allow the user to select an idle-pc value.
         """
 
-        self._idlepc_progress_dialog.reject()
-        QtGui.QMessageBox.critical(self, "Idle-PC", "Error: {}".format(message))
-        router = self.scene().selectedItems()[0].node()
-        router.server_error_signal.disconnect(self._showIdlepcError)
-        router.idlepc_signal.disconnect(self._showIdlepcProposals)
+        if error:
+            QtGui.QMessageBox.critical(self, "Idle-PC", "Error: {}".format(result["message"]))
+        else:
+            router = context["router"]
+            log.info("{} has received Idle-PC proposals".format(router.name()))
+            idlepcs = result
+            if idlepcs and idlepcs[0] != "0x0":
+                dialog = IdlePCDialog(router, idlepcs, parent=self)
+                dialog.show()
+                dialog.exec_()
+            else:
+                QtGui.QMessageBox.critical(self, "Idle-PC", "Sorry no Idle-PC values could be computed, please check again with Cisco IOS in a different state")
 
-    def _showIdlepcProposals(self):
+    def _autoIdlepcCallback(self, result, error=False, context={}, **kwargs):
         """
         Slot to allow the user to select an idlepc value.
         """
 
-        self._idlepc_progress_dialog.accept()
-        router = self.scene().selectedItems()[0].node()
-        router.idlepc_signal.disconnect(self._showIdlepcProposals)
-        router.server_error_signal.disconnect(self._showIdlepcError)
-        idlepcs = router.idlepcs()
-        if idlepcs and idlepcs[0] != "0x0":
-            dialog = IdlePCDialog(router, idlepcs, parent=self)
-            dialog.show()
-            dialog.exec_()
+        if error:
+            QtGui.QMessageBox.critical(self, "Auto Idle-PC", "Error: {}".format(result["message"]))
         else:
-            QtGui.QMessageBox.critical(self, "Idle-PC", "Sorry no Idle-PC values could be computed, please check again with Cisco IOS in a different state")
+            router = context["router"]
+            idlepc = result["idlepc"]
+            log.info("{} has received the auto idle-pc value: {}".format(router.name(), idlepc))
+            router.setIdlepc(idlepc)
+            QtGui.QMessageBox.information(self, "Auto Idle-PC", "Idle-PC value {} has been applied on {}".format(idlepc, router.name()))
 
     def duplicateActionSlot(self):
         """
@@ -1189,6 +1174,32 @@ class GraphicsView(QtGui.QGraphicsView):
             text_edit_dialog.show()
             text_edit_dialog.exec_()
 
+    def horizontalAlignmentSlot(self):
+        """
+        Slot to receive events from the horizontal align action in the
+        contextual menu.
+        """
+
+        horizontal_pos = None
+        for item in self.scene().selectedItems():
+            if item.parentItem() is None:
+                if horizontal_pos is None:
+                    horizontal_pos = item.y()
+                item.setPos(item.x(), horizontal_pos)
+
+    def verticalAlignmentSlot(self):
+        """
+        Slot to receive events from the vertical align action in the
+        contextual menu.
+        """
+
+        vertical_position = None
+        for item in self.scene().selectedItems():
+            if item.parentItem() is None:
+                if vertical_position is None:
+                    vertical_position = item.x()
+                item.setPos(vertical_position, item.y())
+
     def raiseLayerActionSlot(self):
         """
         Slot to receive events from the raise one layer action in the
@@ -1207,11 +1218,15 @@ class GraphicsView(QtGui.QGraphicsView):
         contextual menu.
         """
 
+        show_message = True
         for item in self.scene().selectedItems():
             if item.parentItem() is None:
                 current_zvalue = item.zValue()
                 item.setZValue(current_zvalue - 1)
                 item.update()
+                if item.zValue() == -1 and show_message:
+                    QtGui.QMessageBox.information(self, "Layer position", "Object moved to a background layer. You will now have to use the right-click action to select this object in the future and raise it to layer 0 to be able to move it")
+                    show_message = False
 
     def deleteActionSlot(self):
         """
@@ -1250,7 +1265,6 @@ class GraphicsView(QtGui.QGraphicsView):
         """
 
         try:
-            log.debug('In createNode')
             node_module = None
             for module in MODULES:
                 instance = module.instance()
@@ -1262,7 +1276,7 @@ class GraphicsView(QtGui.QGraphicsView):
             if not node_module:
                 raise ModuleError("Could not find any module for {}".format(node_class))
 
-            if not "server" in node_data:
+            if "server" not in node_data:
                 server = node_module.allocateServer(node_class)
             elif node_data["server"] == "local":
                 server = Servers.instance().localServer()
@@ -1277,11 +1291,8 @@ class GraphicsView(QtGui.QGraphicsView):
 
             if server is None:
                 return
-            
-            if not server.connected() and ConnectToServer(self, server) is False:
-                return
 
-            node = node_module.createNode(node_class, server)
+            node = node_module.createNode(node_class, server, self._main_window.project())
             node.error_signal.connect(self._main_window.uiConsoleTextEdit.writeError)
             node.warning_signal.connect(self._main_window.uiConsoleTextEdit.writeWarning)
             node.server_error_signal.connect(self._main_window.uiConsoleTextEdit.writeServerError)

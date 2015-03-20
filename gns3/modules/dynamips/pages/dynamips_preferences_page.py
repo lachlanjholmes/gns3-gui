@@ -29,6 +29,7 @@ from ..settings import DYNAMIPS_SETTINGS
 
 
 class DynamipsPreferencesPage(QtGui.QWidget, Ui_DynamipsPreferencesPageWidget):
+
     """
     QWidget preference page for Dynamips.
     """
@@ -40,24 +41,19 @@ class DynamipsPreferencesPage(QtGui.QWidget, Ui_DynamipsPreferencesPageWidget):
 
         # connect signals
         self.uiDynamipsPathToolButton.clicked.connect(self._dynamipsPathBrowserSlot)
-        self.uiAllocateHypervisorPerDeviceCheckBox.stateChanged.connect(self._allocateHypervisorPerDeviceSlot)
         self.uiGhostIOSSupportCheckBox.stateChanged.connect(self._ghostIOSSupportSlot)
         self.uiRestoreDefaultsPushButton.clicked.connect(self._restoreDefaultsSlot)
         self.uiUseLocalServercheckBox.stateChanged.connect(self._useLocalServerSlot)
-        self.uiTestSettingsPushButton.clicked.connect(self._testSettingsSlot)
-
-        #FIXME: temporally hide test button
-        self.uiTestSettingsPushButton.hide()
 
     def _dynamipsPathBrowserSlot(self):
         """
         Slot to open a file browser and select Dynamips executable.
         """
 
-        filter = ""
+        file_filter = ""
         if sys.platform.startswith("win"):
-            filter = "Executable (*.exe);;All files (*.*)"
-        path = QtGui.QFileDialog.getOpenFileName(self, "Select Dynamips", ".", filter)
+            file_filter = "Executable (*.exe);;All files (*.*)"
+        path = QtGui.QFileDialog.getOpenFileName(self, "Select Dynamips", ".", file_filter)
         if not path:
             return
 
@@ -66,25 +62,6 @@ class DynamipsPreferencesPage(QtGui.QWidget, Ui_DynamipsPreferencesPageWidget):
             return
 
         self.uiDynamipsPathLineEdit.setText(path)
-
-    def _testSettingsSlot(self):
-
-        QtGui.QMessageBox.critical(self, "Test settings", "Sorry, not yet implemented!")
-
-    def _allocateHypervisorPerDeviceSlot(self, state):
-        """
-        Slot to enable or not the memory usage limit per hypervisor and
-        the per IOS allocation, based if the user want one hypervisor per IOS router.
-
-        :param state: state of the allocate hypervisor per device checkBox
-        """
-
-        if state:
-            self.uiMemoryUsageLimitPerHypervisorSpinBox.setEnabled(False)
-            self.uiAllocateHypervisorPerIOSCheckBox.setEnabled(False)
-        else:
-            self.uiMemoryUsageLimitPerHypervisorSpinBox.setEnabled(True)
-            self.uiAllocateHypervisorPerIOSCheckBox.setEnabled(True)
 
     def _ghostIOSSupportSlot(self, state):
         """
@@ -106,13 +83,23 @@ class DynamipsPreferencesPage(QtGui.QWidget, Ui_DynamipsPreferencesPageWidget):
 
     def _useLocalServerSlot(self, state):
         """
-        Slot to enable or not the QTreeWidget for remote servers.
+        Slot to enable or not local server settings.
         """
 
         if state:
-            self.uiRemoteServersTreeWidget.setEnabled(False)
+            self.uiDynamipsPathLineEdit.setEnabled(True)
+            self.uiDynamipsPathToolButton.setEnabled(True)
+            self.uiAllocateAuxConsolePortsCheckBox.setEnabled(True)
+            self.uiGhostIOSSupportCheckBox.setEnabled(True)
+            self.uiMmapSupportCheckBox.setEnabled(True)
+            self.uiSparseMemorySupportCheckBox.setEnabled(True)
         else:
-            self.uiRemoteServersTreeWidget.setEnabled(True)
+            self.uiDynamipsPathLineEdit.setEnabled(False)
+            self.uiDynamipsPathToolButton.setEnabled(False)
+            self.uiAllocateAuxConsolePortsCheckBox.setEnabled(False)
+            self.uiGhostIOSSupportCheckBox.setEnabled(False)
+            self.uiMmapSupportCheckBox.setEnabled(False)
+            self.uiSparseMemorySupportCheckBox.setEnabled(False)
 
     def _populateWidgets(self, settings):
         """
@@ -121,39 +108,12 @@ class DynamipsPreferencesPage(QtGui.QWidget, Ui_DynamipsPreferencesPageWidget):
         :param settings: Dynamips settings
         """
 
-        self.uiDynamipsPathLineEdit.setText(settings["path"])
-        self.uiHypervisorStartPortSpinBox.setValue(settings["hypervisor_start_port_range"])
-        self.uiHypervisorEndPortSpinBox.setValue(settings["hypervisor_end_port_range"])
-        self.uiConsoleStartPortSpinBox.setValue(settings["console_start_port_range"])
-        self.uiConsoleEndPortSpinBox.setValue(settings["console_end_port_range"])
-        self.uiAuxStartPortSpinBox.setValue(settings["aux_start_port_range"])
-        self.uiAuxEndPortSpinBox.setValue(settings["aux_end_port_range"])
-        self.uiUDPStartPortSpinBox.setValue(settings["udp_start_port_range"])
-        self.uiUDPEndPortSpinBox.setValue(settings["udp_end_port_range"])
+        self.uiDynamipsPathLineEdit.setText(settings["dynamips_path"])
+        self.uiAllocateAuxConsolePortsCheckBox.setChecked(settings["allocate_aux_console_ports"])
         self.uiUseLocalServercheckBox.setChecked(settings["use_local_server"])
-        self.uiAllocateHypervisorPerDeviceCheckBox.setChecked(settings["allocate_hypervisor_per_device"])
-        self.uiMemoryUsageLimitPerHypervisorSpinBox.setValue(settings["memory_usage_limit_per_hypervisor"])
-        self.uiAllocateHypervisorPerIOSCheckBox.setChecked(settings["allocate_hypervisor_per_ios_image"])
         self.uiGhostIOSSupportCheckBox.setChecked(settings["ghost_ios_support"])
         self.uiMmapSupportCheckBox.setChecked(settings["mmap_support"])
-        self.uiJITSharingSupportCheckBox.setChecked(settings["jit_sharing_support"])
         self.uiSparseMemorySupportCheckBox.setChecked(settings["sparse_memory_support"])
-
-    def _updateRemoteServersSlot(self):
-        """
-        Adds/Updates the available remote servers.
-        """
-
-        servers = Servers.instance()
-        self.uiRemoteServersTreeWidget.clear()
-        for server in servers.remoteServers().values():
-            host = server.host
-            port = server.port
-            item = QtGui.QTreeWidgetItem(self.uiRemoteServersTreeWidget)
-            item.setText(0, host)
-            item.setText(1, str(port))
-
-        self.uiRemoteServersTreeWidget.resizeColumnToContents(0)
 
     def loadPreferences(self):
         """
@@ -163,31 +123,16 @@ class DynamipsPreferencesPage(QtGui.QWidget, Ui_DynamipsPreferencesPageWidget):
         dynamips_settings = Dynamips.instance().settings()
         self._populateWidgets(dynamips_settings)
 
-        servers = Servers.instance()
-        servers.updated_signal.connect(self._updateRemoteServersSlot)
-        self._updateRemoteServersSlot()
-
     def savePreferences(self):
         """
         Saves the Dynamips preferences.
         """
 
         new_settings = {}
-        new_settings["path"] = self.uiDynamipsPathLineEdit.text()
-        new_settings["hypervisor_start_port_range"] = self.uiHypervisorStartPortSpinBox.value()
-        new_settings["hypervisor_end_port_range"] = self.uiHypervisorEndPortSpinBox.value()
-        new_settings["console_start_port_range"] = self.uiConsoleStartPortSpinBox.value()
-        new_settings["console_end_port_range"] = self.uiConsoleEndPortSpinBox.value()
-        new_settings["aux_start_port_range"] = self.uiAuxStartPortSpinBox.value()
-        new_settings["aux_end_port_range"] = self.uiAuxEndPortSpinBox.value()
-        new_settings["udp_start_port_range"] = self.uiUDPStartPortSpinBox.value()
-        new_settings["udp_end_port_range"] = self.uiUDPEndPortSpinBox.value()
+        new_settings["dynamips_path"] = self.uiDynamipsPathLineEdit.text()
+        new_settings["allocate_aux_console_ports"] = self.uiAllocateAuxConsolePortsCheckBox.isChecked()
         new_settings["use_local_server"] = self.uiUseLocalServercheckBox.isChecked()
-        new_settings["allocate_hypervisor_per_device"] = self.uiAllocateHypervisorPerDeviceCheckBox.isChecked()
-        new_settings["memory_usage_limit_per_hypervisor"] = self.uiMemoryUsageLimitPerHypervisorSpinBox.value()
-        new_settings["allocate_hypervisor_per_ios_image"] = self.uiAllocateHypervisorPerIOSCheckBox.isChecked()
         new_settings["ghost_ios_support"] = self.uiGhostIOSSupportCheckBox.isChecked()
         new_settings["mmap_support"] = self.uiMmapSupportCheckBox.isChecked()
-        new_settings["jit_sharing_support"] = self.uiJITSharingSupportCheckBox.isChecked()
         new_settings["sparse_memory_support"] = self.uiSparseMemorySupportCheckBox.isChecked()
         Dynamips.instance().setSettings(new_settings)

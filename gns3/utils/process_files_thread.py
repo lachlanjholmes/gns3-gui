@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 
 class ProcessFilesThread(QtCore.QThread):
+
     """
     Thread to process files (copy or move).
 
@@ -59,9 +60,6 @@ class ProcessFilesThread(QtCore.QThread):
 
         self._is_running = True
 
-        # count the number of files in the source directory
-        file_count = self._countFiles(self._source)
-
         try:
             os.makedirs(self._destination)
         except FileExistsError:
@@ -69,6 +67,14 @@ class ProcessFilesThread(QtCore.QThread):
         except OSError as e:
             self.error.emit("Could not create directory {}: {}".format(self._destination, e), True)
             return
+
+        # Source can be None if directory have never been created (temporary project only on remote servers)
+        if self._source is None:
+            self.completed.emit()
+            return
+
+        # count the number of files in the source directory
+        file_count = self._countFiles(self._source)
 
         copied = 0
         # start copying/moving from the source directory
@@ -102,10 +108,10 @@ class ProcessFilesThread(QtCore.QThread):
                         shutil.copy2(source_file, destination_file)
                 except OSError as e:
                     if self._move:
-                        log.warning("cannot move: {}".format(e))
+                        log.warning("Cannot move: {}".format(e))
                         self.error.emit("Could not move file to {}: {}".format(destination_file, e), False)
                     else:
-                        log.warning("cannot copy: {}".format(e))
+                        log.warning("Cannot copy: {}".format(e))
                         self.error.emit("Could not copy file to {}: {}".format(destination_file, e), False)
                 copied += 1
                 # update the progress made

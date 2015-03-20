@@ -25,12 +25,15 @@ import sys
 import signal
 import socket
 import re
+import shutil
 import pkg_resources
 
-from gns3.qt import QtCore
 from gns3.servers import Servers
+from gns3.local_config import LocalConfig
 from gns3.utils.get_resource import get_resource
 from gns3.utils.get_default_base_config import get_default_base_config
+from gns3.local_server_config import LocalServerConfig
+from gns3.qt import QtCore
 
 from ..module import Module
 from ..module_error import ModuleError
@@ -43,6 +46,7 @@ log = logging.getLogger(__name__)
 
 
 class VPCS(Module):
+
     """
     VPCS module.
     """
@@ -52,7 +56,6 @@ class VPCS(Module):
 
         self._settings = {}
         self._nodes = []
-        self._servers = []
         self._working_dir = ""
 
         self._vpcs_multi_host_process = None
@@ -61,20 +64,54 @@ class VPCS(Module):
         # load the settings
         self._loadSettings()
 
+    @staticmethod
+    def _findVPCS(self):
+        """
+        Finds the VPCS path.
+
+        :return: path to VPCS
+        """
+
+        if sys.platform.startswith("win") and hasattr(sys, "frozen"):
+            vpcs_path = os.path.join(os.getcwd(), "vpcs", "vpcs.exe")
+        elif sys.platform.startswith("darwin") and hasattr(sys, "frozen"):
+            vpcs_path = os.path.join(os.getcwd(), "vpcs")
+        else:
+            vpcs_path = shutil.which("vpcs")
+
+        if vpcs_path is None:
+            return ""
+        return vpcs_path
+
     def _loadSettings(self):
         """
         Loads the settings from the persistent settings file.
         """
 
-        # load the settings
+        local_config = LocalConfig.instance()
+
+        # restore the VPCS settings from QSettings (for backward compatibility)
+        legacy_settings = {}
         settings = QtCore.QSettings()
         settings.beginGroup(self.__class__.__name__)
-        for name, value in VPCS_SETTINGS.items():
-            self._settings[name] = settings.value(name, value, type=VPCS_SETTING_TYPES[name])
+        for name in VPCS_SETTINGS.keys():
+            if settings.contains(name):
+                legacy_settings[name] = settings.value(name, type=VPCS_SETTING_TYPES[name])
+        settings.remove("")
         settings.endGroup()
+
+        if legacy_settings:
+            local_config.saveSectionSettings(self.__class__.__name__, legacy_settings)
+        self._settings = local_config.loadSectionSettings(self.__class__.__name__, VPCS_SETTINGS)
 
         if not self._settings["base_script_file"]:
             self._settings["base_script_file"] = get_default_base_config(get_resource(os.path.join("configs", "vpcs_base_config.txt")))
+
+        if not os.path.exists(self._settings["vpcs_path"]):
+            self._settings["vpcs_path"] = self._findVPCS(self)
+
+        # keep the config file sync
+        self._saveSettings()
 
     def _saveSettings(self):
         """
@@ -82,65 +119,15 @@ class VPCS(Module):
         """
 
         # save the settings
-        settings = QtCore.QSettings()
-        settings.beginGroup(self.__class__.__name__)
-        for name, value in self._settings.items():
-            settings.setValue(name, value)
-        settings.endGroup()
+        LocalConfig.instance().saveSectionSettings(self.__class__.__name__, self._settings)
 
-    def setProjectFilesDir(self, path):
-        """
-        Sets the project files directory path this module.
-
-        :param path: path to the local project files directory
-        """
-
-        self._working_dir = path
-        log.info("local working directory for VPCS module: {}".format(self._working_dir))
-
-        # update the server with the new working directory / project name
-        for server in self._servers:
-            if server.connected():
-                self._sendSettings(server)
-
-    def setImageFilesDir(self, path):
-        """
-        Sets the image files directory path this module.
-
-        :param path: path to the local image files directory
-        """
-
-        pass  # not used by this module
-
-    def addServer(self, server):
-        """
-        Adds a server to be used by this module.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("adding server {}:{} to VPCS module".format(server.host, server.port))
-        self._servers.append(server)
-        self._sendSettings(server)
-
-    def removeServer(self, server):
-        """
-        Removes a server from being used by this module.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("removing server {}:{} from VPCS module".format(server.host, server.port))
-        self._servers.remove(server)
-
-    def servers(self):
-        """
-        Returns all the servers used by this module.
-
-        :returns: list of WebSocketClient instances
-        """
-
-        return self._servers
+        if self._settings["vpcs_path"]:
+            # save some settings to the server config file
+            server_settings = {
+                "vpcs_path": os.path.normpath(self._settings["vpcs_path"]),
+            }
+            config = LocalServerConfig.instance()
+            config.saveSettings(self.__class__.__name__, server_settings)
 
     def addNode(self, node):
         """
@@ -177,76 +164,22 @@ class VPCS(Module):
         :param settings: module settings (dictionary)
         """
 
-        params = {}
-        for name, value in settings.items():
-            if name in self._settings and self._settings[name] != value:
-                params[name] = value
-
-        if params:
-            for server in self._servers:
-                # send the local working directory only if this is a local server
-                if server.isLocal():
-                    params.update({"working_dir": self._working_dir})
-                else:
-                    if "path" in params:
-                        del params["path"]  # do not send VPCS path to remote servers
-                    project_name = os.path.basename(self._working_dir)
-                    if project_name.endswith("-files"):
-                        project_name = project_name[:-6]
-                    params.update({"project_name": project_name})
-                server.send_notification("vpcs.settings", params)
-
         self._settings.update(settings)
         self._saveSettings()
 
-    def _sendSettings(self, server):
-        """
-        Sends the module settings to the server.
-
-        :param server: WebSocketClient instance
-        """
-
-        log.info("sending VPCS settings to server {}:{}".format(server.host, server.port))
-        params = self._settings.copy()
-
-        # do not send the base script file path.
-        del params["base_script_file"]
-
-        # send the local working directory only if this is a local server
-        if server.isLocal():
-            params.update({"working_dir": self._working_dir})
-        else:
-            if "path" in params:
-                del params["path"]  # do not send VPCS path to remote servers
-            project_name = os.path.basename(self._working_dir)
-            if project_name.endswith("-files"):
-                project_name = project_name[:-6]
-            params.update({"project_name": project_name})
-        server.send_notification("vpcs.settings", params)
-
-    def createNode(self, node_class, server):
+    def createNode(self, node_class, server, project):
         """
         Creates a new node.
 
         :param node_class: Node object
-        :param server: WebSocketClient instance
+        :param server: HTTPClient instance
+        :param project: Project instance
         """
 
-        log.info("creating node {}".format(node_class))
-
-        if not server.connected():
-            try:
-                log.info("reconnecting to server {}:{}".format(server.host, server.port))
-                server.reconnect()
-            except OSError as e:
-                raise ModuleError("Could not connect to server {}:{}: {}".format(server.host,
-                                                                                 server.port,
-                                                                                 e))
-        if server not in self._servers:
-            self.addServer(server)
+        log.info("Creating node {}".format(node_class))
 
         # create an instance of the node class
-        return node_class(self, server)
+        return node_class(self, server, project)
 
     def setupNode(self, node, node_name):
         """
@@ -263,35 +196,15 @@ class VPCS(Module):
         if script_file:
             settings["script_file"] = script_file
 
-        node.setup(None, initial_settings=settings)
+        node.setup(None, additional_settings=settings)
 
     def reset(self):
         """
-        Resets the servers.
+        Resets the module.
         """
 
-        log.info("vpcs module reset")
-        self.stopMultiHostVPCS()
-        for server in self._servers:
-            if server.connected():
-                server.send_notification("vpcs.reset")
-        self._servers.clear()
+        log.info("VPCS module reset")
         self._nodes.clear()
-
-    def notification(self, destination, params):
-        """
-        To received notifications from the server.
-
-        :param destination: JSON-RPC method
-        :param params: JSON-RPC params
-        """
-
-        if "id" in params:
-            for node in self._nodes:
-                if node.id() == params["id"]:
-                    message = "node {}: {}".format(node.name(), params["message"])
-                    self.notification_signal.emit(message, params["details"])
-                    node.stop()
 
     def exportConfigs(self, directory):
         """
@@ -321,14 +234,14 @@ class VPCS(Module):
         """
 
         try:
-            output = subprocess.check_output([self._settings["path"], "-v"], cwd=working_dir)
+            output = subprocess.check_output([self._settings["vpcs_path"], "-v"], cwd=working_dir)
             match = re.search("Welcome to Virtual PC Simulator, version ([0-9a-z\.]+)", output.decode("utf-8"))
             if match:
                 version = match.group(1)
                 if pkg_resources.parse_version(version) < pkg_resources.parse_version("0.5b1"):
                     raise ModuleError("VPCS executable version must be >= 0.5b1")
             else:
-                raise ModuleError("Could not determine the VPCS version for {}".format(self._settings["path"]))
+                raise ModuleError("Could not determine the VPCS version for {}".format(self._settings["vpcs_path"]))
         except (OSError, subprocess.SubprocessError) as e:
             raise ModuleError("Error while looking for the VPCS version: {}".format(e))
 
@@ -343,14 +256,14 @@ class VPCS(Module):
         if self._vpcs_multi_host_process and self._vpcs_multi_host_process.poll() is None:
             return self._vpcs_multi_host_port
 
-        if not self._settings["path"]:
+        if not self._settings["vpcs_path"]:
             raise ModuleError("No path to a VPCS executable has been set")
 
-        if not os.path.isfile(self._settings["path"]):
-            raise ModuleError("VPCS program '{}' is not accessible".format(self._settings["path"]))
+        if not os.path.isfile(self._settings["vpcs_path"]):
+            raise ModuleError("VPCS program '{}' is not accessible".format(self._settings["vpcs_path"]))
 
-        if not os.access(self._settings["path"], os.X_OK):
-            raise ModuleError("VPCS program '{}' is not executable".format(self._settings["path"]))
+        if not os.access(self._settings["vpcs_path"], os.X_OK):
+            raise ModuleError("VPCS program '{}' is not executable".format(self._settings["vpcs_path"]))
 
         self._check_vpcs_version(working_dir)
 
@@ -365,7 +278,7 @@ class VPCS(Module):
         if sys.platform.startswith("win32"):
             flags = subprocess.CREATE_NEW_PROCESS_GROUP
         try:
-            vpcs_command = [self._settings["path"], "-p", str(self._vpcs_multi_host_port), "-F"]
+            vpcs_command = [self._settings["vpcs_path"], "-p", str(self._vpcs_multi_host_port), "-F"]
             self._vpcs_multi_host_process = subprocess.Popen(vpcs_command, cwd=working_dir, creationflags=flags)
         except (OSError, subprocess.SubprocessError) as e:
             raise ModuleError("Could not start VPCS {}".format(e))

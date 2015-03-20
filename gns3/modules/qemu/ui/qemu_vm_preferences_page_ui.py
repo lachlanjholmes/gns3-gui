@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file '/home/grossmj/PycharmProjects/gns3-gui/gns3/modules/qemu/ui/qemu_vm_preferences_page.ui'
 #
-# Created: Wed Nov 19 18:57:19 2014
+# Created: Wed Mar 11 22:03:56 2015
 #      by: PyQt4 UI code generator 4.10.4
 #
 # WARNING! All changes made in this file will be lost!
@@ -26,7 +26,7 @@ except AttributeError:
 class Ui_QemuVMPreferencesPageWidget(object):
     def setupUi(self, QemuVMPreferencesPageWidget):
         QemuVMPreferencesPageWidget.setObjectName(_fromUtf8("QemuVMPreferencesPageWidget"))
-        QemuVMPreferencesPageWidget.resize(706, 543)
+        QemuVMPreferencesPageWidget.resize(511, 543)
         self.gridLayout = QtGui.QGridLayout(QemuVMPreferencesPageWidget)
         self.gridLayout.setObjectName(_fromUtf8("gridLayout"))
         self.uiQemuVMsTreeWidget = QtGui.QTreeWidget(QemuVMPreferencesPageWidget)
@@ -48,6 +48,11 @@ class Ui_QemuVMPreferencesPageWidget(object):
         self.uiQemuVMsTreeWidget.header().setVisible(False)
         self.gridLayout.addWidget(self.uiQemuVMsTreeWidget, 0, 0, 2, 1)
         self.uiQemuVMInfoTreeWidget = QtGui.QTreeWidget(QemuVMPreferencesPageWidget)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.uiQemuVMInfoTreeWidget.sizePolicy().hasHeightForWidth())
+        self.uiQemuVMInfoTreeWidget.setSizePolicy(sizePolicy)
         self.uiQemuVMInfoTreeWidget.setIndentation(10)
         self.uiQemuVMInfoTreeWidget.setAllColumnsShowFocus(True)
         self.uiQemuVMInfoTreeWidget.setObjectName(_fromUtf8("uiQemuVMInfoTreeWidget"))
@@ -74,6 +79,7 @@ class Ui_QemuVMPreferencesPageWidget(object):
 
     def retranslateUi(self, QemuVMPreferencesPageWidget):
         QemuVMPreferencesPageWidget.setWindowTitle(_translate("QemuVMPreferencesPageWidget", "QEMU VMs", None))
+        QemuVMPreferencesPageWidget.setAccessibleName(_translate("QemuVMPreferencesPageWidget", "QEMU VM templates", None))
         self.uiQemuVMInfoTreeWidget.headerItem().setText(0, _translate("QemuVMPreferencesPageWidget", "1", None))
         self.uiQemuVMInfoTreeWidget.headerItem().setText(1, _translate("QemuVMPreferencesPageWidget", "2", None))
         self.uiNewQemuVMPushButton.setText(_translate("QemuVMPreferencesPageWidget", "&New", None))

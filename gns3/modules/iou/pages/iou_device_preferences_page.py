@@ -39,6 +39,7 @@ from ..dialogs.iou_device_wizard import IOUDeviceWizard
 
 
 class IOUDevicePreferencesPage(QtGui.QWidget, Ui_IOUDevicePreferencesPageWidget):
+
     """
     QWidget preference page for IOU image & device preferences.
     """
@@ -206,7 +207,7 @@ class IOUDevicePreferencesPage(QtGui.QWidget, Ui_IOUDevicePreferencesPageWidget)
         :return: path to the IOU image or None
         """
 
-        destination_directory = os.path.join(MainWindow.instance().settings()["images_path"], "IOU")
+        destination_directory = os.path.join(MainWindow.instance().imagesDirPath(), "IOU")
         path, _ = QtGui.QFileDialog.getOpenFileNameAndFilter(parent,
                                                              "Select an IOU image",
                                                              destination_directory,
@@ -336,5 +337,5 @@ class IOUDevicePreferencesPage(QtGui.QWidget, Ui_IOUDevicePreferencesPageWidget)
         Saves the IOU devices preferences.
         """
 
-        #self._iouImageSaveSlot()
+        # self._iouImageSaveSlot()
         IOU.instance().setIOUDevices(self._iou_devices)

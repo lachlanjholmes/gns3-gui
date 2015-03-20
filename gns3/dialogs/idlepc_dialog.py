@@ -23,6 +23,7 @@ from ..ui.idlepc_dialog_ui import Ui_IdlePCDialog
 
 
 class IdlePCDialog(QtGui.QDialog, Ui_IdlePCDialog):
+
     """
     Idle-PC dialog.
     """
@@ -67,11 +68,10 @@ class IdlePCDialog(QtGui.QDialog, Ui_IdlePCDialog):
             return
 
         idlepc = self.uiComboBox.itemData(self.uiComboBox.currentIndex())
-
         # apply Idle-PC to all routers with the same IOS image
         ios_image = self._router.settings()["image"]
         for node in Topology.instance().nodes():
-            if hasattr(node, "idlepcs") and node.settings()["image"] == ios_image:
+            if hasattr(node, "idlepc") and node.settings()["image"] == ios_image:
                 node.setIdlepc(idlepc)
 
     def done(self, result):
@@ -84,4 +84,3 @@ class IdlePCDialog(QtGui.QDialog, Ui_IdlePCDialog):
         if result:
             self._applySlot()
         QtGui.QDialog.done(self, result)
-

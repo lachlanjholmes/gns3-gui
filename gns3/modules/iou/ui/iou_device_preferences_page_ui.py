@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file '/home/grossmj/PycharmProjects/gns3-gui/gns3/modules/iou/ui/iou_device_preferences_page.ui'
 #
-# Created: Wed Nov 19 18:57:19 2014
+# Created: Wed Mar 11 22:01:55 2015
 #      by: PyQt4 UI code generator 4.10.4
 #
 # WARNING! All changes made in this file will be lost!
@@ -26,7 +26,7 @@ except AttributeError:
 class Ui_IOUDevicePreferencesPageWidget(object):
     def setupUi(self, IOUDevicePreferencesPageWidget):
         IOUDevicePreferencesPageWidget.setObjectName(_fromUtf8("IOUDevicePreferencesPageWidget"))
-        IOUDevicePreferencesPageWidget.resize(684, 516)
+        IOUDevicePreferencesPageWidget.resize(506, 508)
         self.gridLayout = QtGui.QGridLayout(IOUDevicePreferencesPageWidget)
         self.gridLayout.setObjectName(_fromUtf8("gridLayout"))
         self.uiIOUDevicesTreeWidget = QtGui.QTreeWidget(IOUDevicePreferencesPageWidget)
@@ -48,6 +48,11 @@ class Ui_IOUDevicePreferencesPageWidget(object):
         self.uiIOUDevicesTreeWidget.header().setVisible(False)
         self.gridLayout.addWidget(self.uiIOUDevicesTreeWidget, 0, 0, 2, 1)
         self.uiIOUDeviceInfoTreeWidget = QtGui.QTreeWidget(IOUDevicePreferencesPageWidget)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.MinimumExpanding, QtGui.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.uiIOUDeviceInfoTreeWidget.sizePolicy().hasHeightForWidth())
+        self.uiIOUDeviceInfoTreeWidget.setSizePolicy(sizePolicy)
         self.uiIOUDeviceInfoTreeWidget.setIndentation(10)
         self.uiIOUDeviceInfoTreeWidget.setAllColumnsShowFocus(True)
         self.uiIOUDeviceInfoTreeWidget.setObjectName(_fromUtf8("uiIOUDeviceInfoTreeWidget"))
@@ -73,9 +78,10 @@ class Ui_IOUDevicePreferencesPageWidget(object):
 
     def retranslateUi(self, IOUDevicePreferencesPageWidget):
         IOUDevicePreferencesPageWidget.setWindowTitle(_translate("IOUDevicePreferencesPageWidget", "IOU devices", None))
+        IOUDevicePreferencesPageWidget.setAccessibleName(_translate("IOUDevicePreferencesPageWidget", "IOU device templates", None))
         self.uiIOUDeviceInfoTreeWidget.headerItem().setText(0, _translate("IOUDevicePreferencesPageWidget", "1", None))
         self.uiIOUDeviceInfoTreeWidget.headerItem().setText(1, _translate("IOUDevicePreferencesPageWidget", "2", None))
         self.uiNewIOUDevicePushButton.setText(_translate("IOUDevicePreferencesPageWidget", "&New", None))
         self.uiEditIOUDevicePushButton.setText(_translate("IOUDevicePreferencesPageWidget", "&Edit", None))
-        self.uiDeleteIOUDevicePushButton.setText(_translate("IOUDevicePreferencesPageWidget", "Delete", None))
+        self.uiDeleteIOUDevicePushButton.setText(_translate("IOUDevicePreferencesPageWidget", "&Delete", None))
 

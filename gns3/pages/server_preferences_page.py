@@ -28,17 +28,16 @@ from ..topology import Topology
 from ..utils.message_box import MessageBox
 from ..utils.progress_dialog import ProgressDialog
 from ..utils.wait_for_connection_thread import WaitForConnectionThread
-from ..settings import DEFAULT_LOCAL_SERVER_PATH
-from ..settings import DEFAULT_LOCAL_SERVER_HOST
-from ..settings import DEFAULT_LOCAL_SERVER_PORT
+from ..settings import LOCAL_SERVER_SETTINGS
 
 
 class ServerPreferencesPage(QtGui.QWidget, Ui_ServerPreferencesPageWidget):
+
     """
     QWidget configuration page for server preferences.
     """
 
-    def __init__(self):
+    def __init__(self, parent=None):
 
         QtGui.QWidget.__init__(self)
         self.setupUi(self)
@@ -50,17 +49,14 @@ class ServerPreferencesPage(QtGui.QWidget, Ui_ServerPreferencesPageWidget):
         self.uiDeleteRemoteServerPushButton.clicked.connect(self._remoteServerDeleteSlot)
         self.uiRemoteServersTreeWidget.itemClicked.connect(self._remoteServerClickedSlot)
         self.uiRemoteServersTreeWidget.itemSelectionChanged.connect(self._remoteServerChangedSlot)
-        self.uiTestSettingsPushButton.clicked.connect(self._testSettingsSlot)
         self.uiRestoreDefaultsPushButton.clicked.connect(self._restoreDefaultsSlot)
-
-        #FIXME: temporally hide test button
-        self.uiTestSettingsPushButton.hide()
+        self.uiLocalServerAutoStartCheckBox.stateChanged.connect(self._useLocalServerAutoStartSlot)
 
         # load all available addresses
         for address in QtNetwork.QNetworkInterface.allAddresses():
             address_string = address.toString()
             if address.protocol() == QtNetwork.QAbstractSocket.IPv6Protocol:
-                continue  #FIXME: finish IPv6 support (problem with ws4py)
+                continue  # FIXME: finish IPv6 support (problem with ws4py)
                 # we do not want the scope id when using an IPv6 address...
                 address.setScopeId("")
             self.uiLocalServerHostComboBox.addItem(address_string, address.toString())
@@ -70,21 +66,26 @@ class ServerPreferencesPage(QtGui.QWidget, Ui_ServerPreferencesPageWidget):
         if index != -1:
             self.uiLocalServerHostComboBox.setCurrentIndex(index)
 
-    def _testSettingsSlot(self):
+    def _useLocalServerAutoStartSlot(self, state):
+        """
+        Slot to enable or not local server settings.
+        """
 
-        QtGui.QMessageBox.critical(self, "Test settings", "Sorry, not yet implemented!")
+        if state:
+            self.uiGeneralSettingsGroupBox.setEnabled(True)
+            self.uiConsolePortRangeGroupBox.setEnabled(True)
+            self.uiUDPPortRangeGroupBox.setEnabled(True)
+        else:
+            self.uiGeneralSettingsGroupBox.setEnabled(False)
+            self.uiConsolePortRangeGroupBox.setEnabled(False)
+            self.uiUDPPortRangeGroupBox.setEnabled(False)
 
     def _restoreDefaultsSlot(self):
         """
         Slot to restore default settings
         """
 
-        index = self.uiLocalServerHostComboBox.findData(DEFAULT_LOCAL_SERVER_HOST)
-        if index != -1:
-            self.uiLocalServerHostComboBox.setCurrentIndex(index)
-        self.uiLocalServerPortSpinBox.setValue(DEFAULT_LOCAL_SERVER_PORT)
-        self.uiLocalServerPathLineEdit.setText(DEFAULT_LOCAL_SERVER_PATH)
-        self.uiLocalServerAutoStartCheckBox.setChecked(True)
+        self._populateWidgets(LOCAL_SERVER_SETTINGS)
 
     def _localServerBrowserSlot(self):
         """
@@ -163,6 +164,25 @@ class ServerPreferencesPage(QtGui.QWidget, Ui_ServerPreferencesPageWidget):
             del self._remote_servers[remote_server]
             self.uiRemoteServersTreeWidget.takeTopLevelItem(self.uiRemoteServersTreeWidget.indexOfTopLevelItem(item))
 
+    def _populateWidgets(self, settings):
+        """
+        Populates the widgets with the settings.
+
+        :param settings: Local server settings
+        """
+
+        self.uiLocalServerPathLineEdit.setText(settings["path"])
+        index = self.uiLocalServerHostComboBox.findData(settings["host"])
+        if index != -1:
+            self.uiLocalServerHostComboBox.setCurrentIndex(index)
+        self.uiLocalServerPortSpinBox.setValue(settings["port"])
+        self.uiLocalServerAutoStartCheckBox.setChecked(settings["auto_start"])
+        self.uiConsoleConnectionsToAnyIPCheckBox.setChecked(settings["allow_console_from_anywhere"])
+        self.uiConsoleStartPortSpinBox.setValue(settings["console_start_port_range"])
+        self.uiConsoleEndPortSpinBox.setValue(settings["console_end_port_range"])
+        self.uiUDPStartPortSpinBox.setValue(settings["udp_start_port_range"])
+        self.uiUDPEndPortSpinBox.setValue(settings["udp_end_port_range"])
+
     def loadPreferences(self):
         """
         Loads the server preferences.
@@ -171,15 +191,8 @@ class ServerPreferencesPage(QtGui.QWidget, Ui_ServerPreferencesPageWidget):
         servers = Servers.instance()
 
         # load the local server preferences
-        local_server = servers.localServer()
-        index = self.uiLocalServerHostComboBox.findData(local_server.host)
-        if index != -1:
-            self.uiLocalServerHostComboBox.setCurrentIndex(index)
-
-        self.uiLocalServerPortSpinBox.setValue(local_server.port)
-        self.uiLocalServerPathLineEdit.setText(servers.localServerPath())
-        self.uiLocalServerAutoStartCheckBox.setChecked(servers.localServerAutoStart())
-        self.uiConsoleConnectionsToAnyIPCheckBox.setChecked(servers.localServerAllowConsoleFromAnywhere())
+        local_server_settings = servers.localServerSettings()
+        self._populateWidgets(local_server_settings)
 
         # load remote server preferences
         self._remote_servers.clear()
@@ -201,63 +214,61 @@ class ServerPreferencesPage(QtGui.QWidget, Ui_ServerPreferencesPageWidget):
         """
 
         servers = Servers.instance()
+        current_settings = servers.localServerSettings()
+        restart_local_server = False
 
         # save the local server preferences
-        local_server_host = self.uiLocalServerHostComboBox.itemData(self.uiLocalServerHostComboBox.currentIndex())
-        local_server_port = self.uiLocalServerPortSpinBox.value()
-        local_server_path = self.uiLocalServerPathLineEdit.text()
-        local_server_auto_start = self.uiLocalServerAutoStartCheckBox.isChecked()
-        local_server_allow_console_from_anywhere = self.uiConsoleConnectionsToAnyIPCheckBox.isChecked()
+        new_settings = {}
+        new_settings["path"] = self.uiLocalServerPathLineEdit.text()
+        new_settings["host"] = self.uiLocalServerHostComboBox.itemData(self.uiLocalServerHostComboBox.currentIndex())
+        new_settings["port"] = self.uiLocalServerPortSpinBox.value()
+        new_settings["auto_start"] = self.uiLocalServerAutoStartCheckBox.isChecked()
+        new_settings["allow_console_from_anywhere"] = self.uiConsoleConnectionsToAnyIPCheckBox.isChecked()
+        new_settings["console_start_port_range"] = self.uiConsoleStartPortSpinBox.value()
+        new_settings["console_end_port_range"] = self.uiConsoleEndPortSpinBox.value()
+        new_settings["udp_start_port_range"] = self.uiUDPStartPortSpinBox.value()
+        new_settings["udp_end_port_range"] = self.uiUDPEndPortSpinBox.value()
+        new_settings["images_path"] = current_settings["images_path"]
+        new_settings["projects_path"] = current_settings["projects_path"]
+        new_settings["report_errors"] = current_settings["report_errors"]
 
-        if local_server_path:
-            if not os.path.isfile(local_server_path):
-                QtGui.QMessageBox.critical(self, "Local server", "Could not find local server {}".format(local_server_path))
-            elif not os.access(local_server_path, os.X_OK):
-                QtGui.QMessageBox.critical(self, "Local server", "{} is not an executable".format(local_server_path))
-            else:
-                server = servers.localServer()
-                if servers.localServerPath() != local_server_path or \
-                                server.host != local_server_host or \
-                                server.port != local_server_port or \
-                                servers.localServerAllowConsoleFromAnywhere() != local_server_allow_console_from_anywhere:
+        if new_settings["auto_start"]:
+            if not os.path.isfile(new_settings["path"]):
+                QtGui.QMessageBox.critical(self, "Local server", "Could not find local server {}".format(new_settings["path"]))
+                return
+            if not os.access(new_settings["path"], os.X_OK):
+                QtGui.QMessageBox.critical(self, "Local server", "{} is not an executable".format(new_settings["path"]))
 
-                    # first check if we have nodes on the local server
-                    local_nodes = []
-                    topology = Topology.instance()
-                    for node in topology.nodes():
-                        if node.server().isLocal():
-                            local_nodes.append(node.name())
-
-                    if local_nodes:
-                        nodes = "\n".join(local_nodes)
-                        MessageBox(self, "Local server", "Please close your project or delete all the nodes running on the local server before changing settings", nodes)
-                        return
-
-                    servers.setLocalServer(local_server_path,
-                                           local_server_host,
-                                           local_server_port,
-                                           local_server_auto_start,
-                                           local_server_allow_console_from_anywhere)
-
-                    # local server settings have changed, let's stop the current local server.
-                    if server.connected() and not sys.platform.startswith('win'):
-                        server.close_connection()
-                    servers.stopLocalServer(wait=True)
-                    #TODO: ASK if the user wants to start local server
-                    if servers.startLocalServer(local_server_path, local_server_host, local_server_port):
-                        self._thread = WaitForConnectionThread(local_server_host, local_server_port)
-                        dialog = ProgressDialog(self._thread, "Local server", "Connecting...", "Cancel", busy=True, parent=self)
-                        dialog.show()
-                        dialog.exec_()
-                    else:
-                        QtGui.QMessageBox.critical(self, "Local server", "Could not start the local server process: {}".format(local_server_path))
+            if new_settings != current_settings:
+                # first check if we have nodes on the local server
+                local_nodes = []
+                topology = Topology.instance()
+                for node in topology.nodes():
+                    if node.server().isLocal():
+                        local_nodes.append(node.name())
+                if local_nodes:
+                    nodes = "\n".join(local_nodes)
+                    MessageBox(self, "Local server", "Please close your project or delete all the nodes running on the \
+                    local server before changing the local server settings", nodes)
+                    return
+                restart_local_server = True
         else:
-            servers.setLocalServer(local_server_path,
-                                   local_server_host,
-                                   local_server_port,
-                                   local_server_auto_start,
-                                   local_server_allow_console_from_anywhere)
+            servers.stopLocalServer(wait=True)
 
+        # save the local server preferences
+        servers.setLocalServerSettings(new_settings)
         # save the remote server preferences
         servers.updateRemoteServers(self._remote_servers)
         servers.save()
+
+        # restart the local server if required
+        if restart_local_server:
+            servers.stopLocalServer(wait=True)
+            if servers.startLocalServer():
+                thread = WaitForConnectionThread(new_settings["host"], new_settings["port"])
+                thread.deleteLater()
+                dialog = ProgressDialog(thread, "Local server", "Connecting...", "Cancel", busy=True, parent=self)
+                dialog.show()
+                dialog.exec_()
+            else:
+                QtGui.QMessageBox.critical(self, "Local server", "Could not start the local server process: {}".format(new_settings["path"]))

@@ -29,6 +29,7 @@ from ..settings import CHASSIS, ADAPTER_MATRIX, WIC_MATRIX
 
 
 class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
+
     """
     QWidget configuration page for IOS routers.
     """
@@ -55,8 +56,8 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
         self.uiIOSImageToolButton.clicked.connect(self._iosImageBrowserSlot)
 
         self._idle_valid = False
-        idle_pc_rgx = QtCore.QRegExp("^(0x[0-9a-fA-F]+)?$")
-        validator = QtGui.QRegExpValidator(idle_pc_rgx)
+        idle_pc_rgx = QtCore.QRegExp("^(0x[0-9a-fA-F]{8})?$")
+        validator = QtGui.QRegExpValidator(idle_pc_rgx, self)
         self.uiIdlepcLineEdit.setValidator(validator)
         self.uiIdlepcLineEdit.textChanged.connect(self._idlePCValidateSlot)
         self.uiIdlepcLineEdit.textChanged.emit(self.uiIdlepcLineEdit.text())
@@ -65,9 +66,9 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
         """
         Slot to validate the entered Idle-PC Value
         """
-        sender = self.sender()
-        validator = sender.validator()
-        state = validator.validate(sender.text(), 0)[0]
+
+        validator = self.uiIdlepcLineEdit.validator()
+        state = validator.validate(self.uiIdlepcLineEdit.text(), 0)[0]
         if state == QtGui.QValidator.Acceptable:
             color = '#A2C964'  # green
             self._idle_valid = True
@@ -77,7 +78,7 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
         else:
             color = '#f6989d'  # red
             self._idle_valid = False
-        sender.setStyleSheet('QLineEdit { background-color: %s }' % color)
+        self.uiIdlepcLineEdit.setStyleSheet('QLineEdit { background-color: %s }' % color)
 
     def _iosImageBrowserSlot(self):
         """
@@ -168,7 +169,7 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
         for slot_number, slot_adapters in ADAPTER_MATRIX[platform][chassis].items():
             self._widget_slots[slot_number].setEnabled(True)
 
-            if type(slot_adapters) == str:
+            if isinstance(slot_adapters, str):
                 # only one default adapter for this slot.
                 self._widget_slots[slot_number].addItem(slot_adapters)
             else:
@@ -223,7 +224,10 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
                 self.uiConsolePortSpinBox.hide()
 
             if "aux" in settings:
-                self.uiAuxPortSpinBox.setValue(settings["aux"])
+                if settings["aux"] is None:
+                    self.uiAuxPortSpinBox.setValue(0)
+                else:
+                    self.uiAuxPortSpinBox.setValue(settings["aux"])
             else:
                 self.uiAuxPortLabel.hide()
                 self.uiAuxPortSpinBox.hide()
@@ -313,7 +317,7 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
                 else:
                     self.uiPowerSupply2ComboBox.setCurrentIndex(1)
             else:
-               self.uiTabWidget.removeTab(4)  # environment tab
+                self.uiTabWidget.removeTab(4)  # environment tab
 
             # all platforms but c7200 have the iomem feature
             # let"s hide these widgets.
@@ -341,9 +345,6 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
 
         # load the system ID (processor board ID in IOS) setting
         self.uiSystemIdLineEdit.setText(settings["system_id"])
-
-        # load the configuration register setting
-        self.uiConfregLineEdit.setText(settings["confreg"])
 
         if "exec_area" in settings:
             # load the exec area setting
@@ -393,13 +394,13 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
         node_ports = node.ports()
         for node_port in node_ports:
             # ports > 15 are WICs ones.
-            if node_port.slotNumber() == slot_number and node_port.portNumber() <= 15 and not node_port.isFree():
+            if node_port.adapterNumber() == slot_number and node_port.portNumber() <= 15 and not node_port.isFree():
                 adapter = settings["slot" + str(slot_number)]
                 index = self._widget_slots[slot_number].findText(adapter)
                 if index != -1:
                     self._widget_slots[slot_number].setCurrentIndex(index)
                 QtGui.QMessageBox.critical(self, node.name(), "A link is connected to port {} on adapter {}, please remove it first".format(node_port.name(),
-                                                                                                                                              adapter))
+                                                                                                                                            adapter))
                 raise ConfigurationError()
 
     def _checkForLinkConnectedToWIC(self, wic_number, settings, node):
@@ -414,7 +415,7 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
         node_ports = node.ports()
         for node_port in node_ports:
             # ports > 15 are WICs ones.
-            if node_port.slotNumber() == wic_number and node_port.portNumber() > 15 and not node_port.isFree():
+            if node_port.adapterNumber() == wic_number and node_port.portNumber() > 15 and not node_port.isFree():
                 wic = settings["wic" + str(wic_number)]
                 index = self._widget_wics[wic_number].findText(wic)
                 if index != -1:
@@ -431,11 +432,6 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
         :param node: Node instance
         :param group: indicates the settings apply to a group of routers
         """
-
-        #print("saving {}".format(group))
-
-        # these settings cannot be shared by nodes and updated
-        # in the node configurator.
 
         if not group:
 
@@ -455,19 +451,21 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
                 settings["name"] = name
 
             settings["console"] = self.uiConsolePortSpinBox.value()
-            settings["aux"] = self.uiAuxPortSpinBox.value()
+            aux = self.uiAuxPortSpinBox.value()
+            if aux:
+                settings["aux"] = aux
 
             # check and save the base MAC address
-            #mac = self.uiBaseMACLineEdit.text()
-            #if mac and not re.search(r"""^([0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$""", mac):
+            # mac = self.uiBaseMACLineEdit.text()
+            # if mac and not re.search(r"""^([0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$""", mac):
             #    QtGui.QMessageBox.critical(self, "MAC address", "Invalid MAC address (format required: hhhh.hhhh.hhhh)")
-            #elif mac != "":
+            # elif mac != "":
             #    settings["mac_addr"] = mac
 
             # save the IOS image path
             path = self.uiIOSImageLineEdit.text()
-            #settings["path"] = path
-            settings["image"] = path#os.path.basename(path)
+            # settings["path"] = path
+            settings["image"] = path  # os.path.basename(path)
 
         else:
             del settings["name"]
@@ -479,15 +477,15 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
             del settings["image"]
 
         if not node:
-            startup_config = self.uiStartupConfigLineEdit.text()
-            if startup_config != settings["startup_config"]:
+            startup_config = self.uiStartupConfigLineEdit.text().strip()
+            if startup_config and startup_config != settings["startup_config"]:
                 if os.access(startup_config, os.R_OK):
                     settings["startup_config"] = startup_config
                 else:
                     QtGui.QMessageBox.critical(self, "Startup-config", "Cannot read the startup-config file")
 
-            private_config = self.uiPrivateConfigLineEdit.text()
-            if private_config != settings["private_config"]:
+            private_config = self.uiPrivateConfigLineEdit.text().strip()
+            if private_config and private_config != settings["private_config"]:
                 if os.access(private_config, os.R_OK):
                     settings["private_config"] = private_config
                 else:
@@ -533,10 +531,6 @@ class IOSRouterConfigurationPage(QtGui.QWidget, Ui_iosRouterConfigPageWidget):
 
         # save the system ID (processor board ID in IOS) setting
         settings["system_id"] = self.uiSystemIdLineEdit.text()
-
-        # save the configuration register setting
-        # TODO: check the format? 0xnnnn
-        settings["confreg"] = self.uiConfregLineEdit.text()
 
         # save the exec area setting
         settings["exec_area"] = self.uiExecAreaSpinBox.value()

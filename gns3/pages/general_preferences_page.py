@@ -21,21 +21,27 @@ Configuration page for general preferences.
 
 import os
 import shutil
+import json
+
 from gns3.qt import QtGui, QtCore
+from gns3.local_config import LocalConfig
 from ..ui.general_preferences_page_ui import Ui_GeneralPreferencesPageWidget
 from ..settings import GRAPHICS_VIEW_SETTINGS, GENERAL_SETTINGS, PRECONFIGURED_TELNET_CONSOLE_COMMANDS, PRECONFIGURED_SERIAL_CONSOLE_COMMANDS, STYLES
+from gns3.servers import Servers
 
 
 class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
+
     """
     QWidget configuration page for general preferences.
     """
 
-    def __init__(self):
+    def __init__(self, parent=None):
 
         QtGui.QWidget.__init__(self)
         self.setupUi(self)
         self._remote_servers = {}
+        self._preferences_dialog = parent
 
         # Load the pre-configured console commands
         for name, cmd in sorted(PRECONFIGURED_TELNET_CONSOLE_COMMANDS.items()):
@@ -43,13 +49,12 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
         for name, cmd in sorted(PRECONFIGURED_SERIAL_CONSOLE_COMMANDS.items()):
             self.uiSerialConsolePreconfiguredCommandComboBox.addItem(name, cmd)
 
-        # Display the path of the settings file
-        settings = QtCore.QSettings()
-        self.uiConfigurationFileLabel.setText(settings.fileName())
+        # Display the path of the config file
+        config_file_path = LocalConfig.instance().configFilePath()
+        self.uiConfigurationFileLabel.setText(config_file_path)
 
         self.uiProjectsPathToolButton.clicked.connect(self._projectsPathSlot)
         self.uiImagesPathToolButton.clicked.connect(self._imagesPathSlot)
-        self.uiTemporaryFilesPathToolButton.clicked.connect(self._temporaryFilesPathSlot)
         self.uiImportConfigurationFilePushButton.clicked.connect(self._importConfigurationFileSlot)
         self.uiExportConfigurationFilePushButton.clicked.connect(self._exportConfigurationFileSlot)
         self.uiRestoreDefaultsPushButton.clicked.connect(self._restoreDefaultsSlot)
@@ -65,7 +70,9 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
         Slot to select the projects directory path.
         """
 
-        directory = self._general_settings["projects_path"]
+        servers = Servers.instance()
+        local_server = servers.localServerSettings()
+        directory = local_server["projects_path"]
         path = QtGui.QFileDialog.getExistingDirectory(self, "My projects directory", directory, QtGui.QFileDialog.ShowDirsOnly)
         if path:
             self.uiProjectsPathLineEdit.setText(path)
@@ -76,22 +83,13 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
         Slot to select the images directory path.
         """
 
-        directory = self._general_settings["images_path"]
+        servers = Servers.instance()
+        local_server = servers.localServerSettings()
+        directory = local_server["images_path"]
         path = QtGui.QFileDialog.getExistingDirectory(self, "My images directory", directory, QtGui.QFileDialog.ShowDirsOnly)
         if path:
             self.uiImagesPathLineEdit.setText(path)
             self.uiImagesPathLineEdit.setCursorPosition(0)
-
-    def _temporaryFilesPathSlot(self):
-        """
-        Slot to select the temporary files directory path.
-        """
-
-        directory = self._general_settings["temporary_files_path"]
-        path = QtGui.QFileDialog.getExistingDirectory(self, "Temporary files directory", directory, QtGui.QFileDialog.ShowDirsOnly)
-        if path:
-            self.uiTemporaryFilesPathLineEdit.setText(path)
-            self.uiTemporaryFilesPathLineEdit.setCursorPosition(0)
 
     def _restoreDefaultsSlot(self):
         """
@@ -126,12 +124,24 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
         Slot to import a configuration file.
         """
 
-        settings = QtCore.QSettings()
-        configuration_file_path = settings.fileName()
+        configuration_file_path = LocalConfig.instance().configFilePath()
         directory = os.path.dirname(configuration_file_path)
 
-        path = QtGui.QFileDialog.getOpenFileName(self, "Import configuration file", directory, "Configuration file (*.conf);;All files (*.*)")
+        path = QtGui.QFileDialog.getOpenFileName(self, "Import configuration file", directory, "Configuration file (*.ini *.conf);;All files (*.*)")
         if not path:
+            return
+
+        try:
+            with open(path) as f:
+                config_file = json.load(f)
+            if "type" not in config_file or config_file["type"] != "settings":
+                QtGui.QMessageBox.critical(self, "Import configuration file", "Not a GNS3 configuration file: {}".format(path))
+                return
+        except OSError as e:
+            QtGui.QMessageBox.critical(self, "Import configuration file", "Could not load configuration file {}: {}".format(os.path.basename(path), e))
+            return
+        except ValueError as e:
+            QtGui.QMessageBox.critical(self, "Import configuration file", "Invalid file: {}".format(e))
             return
 
         try:
@@ -142,20 +152,21 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
 
         QtGui.QMessageBox.information(self, "Configuration file", "Configuration file imported, default settings will be applied after a restart")
 
-        #TODO: implement restart
-        #QtCore.QProcess.startDetached(QtGui.QApplication.arguments()[0], QtGui.QApplication.arguments())
-        QtGui.QApplication.quit()
+        # TODO: implement restart
+        # QtCore.QProcess.startDetached(QtGui.QApplication.arguments()[0], QtGui.QApplication.arguments())
+        # QtGui.QApplication.quit()
+        LocalConfig.instance().setConfigFilePath(configuration_file_path)
+        self._preferences_dialog.reject()
 
     def _exportConfigurationFileSlot(self):
         """
         Slot to export a configuration file.
         """
 
-        settings = QtCore.QSettings()
-        configuration_file_path = settings.fileName()
+        configuration_file_path = LocalConfig.instance().configFilePath()
         directory = os.path.dirname(configuration_file_path)
 
-        path = QtGui.QFileDialog.getSaveFileName(self, "Export configuration file", directory, "Configuration file (*.conf);;All files (*.*)")
+        path = QtGui.QFileDialog.getSaveFileName(self, "Export configuration file", directory, "Configuration file (*.ini *.conf);;All files (*.*)")
         if not path:
             return
 
@@ -174,7 +185,6 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
         if ok:
             self.uiDefaultLabelStylePlainTextEdit.setFont(selected_font)
 
-
     def _setDefaultLabelColorSlot(self):
         """
         Slot to select the default label color.
@@ -192,10 +202,12 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
         :param settings: General settings
         """
 
-        self.uiProjectsPathLineEdit.setText(settings["projects_path"])
-        self.uiImagesPathLineEdit.setText(settings["images_path"])
-        self.uiTemporaryFilesPathLineEdit.setText(settings["temporary_files_path"])
+        local_server = Servers.instance().localServerSettings()
+        self.uiProjectsPathLineEdit.setText(local_server["projects_path"])
+        self.uiImagesPathLineEdit.setText(local_server["images_path"])
+        self.uiCrashReportCheckBox.setChecked(local_server["report_errors"])
         self.uiLaunchNewProjectDialogCheckBox.setChecked(settings["auto_launch_project_dialog"])
+        self.uiAutoScreenshotCheckBox.setChecked(settings["auto_screenshot"])
         self.uiCheckForUpdateCheckBox.setChecked(settings["check_for_update"])
         self.uiLinkManualModeCheckBox.setChecked(settings["link_manual_mode"])
         self.uiSlowStartAllSpinBox.setValue(settings["slow_device_start_all"])
@@ -242,8 +254,8 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
         """
 
         from ..main_window import MainWindow
-        self._general_settings = MainWindow.instance().settings()
-        self._populateGeneralSettingWidgets(self._general_settings)
+        general_settings = MainWindow.instance().settings()
+        self._populateGeneralSettingWidgets(general_settings)
 
         graphics_view_settings = MainWindow.instance().uiGraphicsView.settings()
         self._populateGraphicsViewSettingWidgets(graphics_view_settings)
@@ -252,12 +264,17 @@ class GeneralPreferencesPage(QtGui.QWidget, Ui_GeneralPreferencesPageWidget):
         """
         Saves the general preferences.
         """
+        servers = Servers.instance()
+
+        local_server = Servers.instance().localServerSettings()
+        local_server["images_path"] = self.uiImagesPathLineEdit.text()
+        local_server["projects_path"] = self.uiProjectsPathLineEdit.text()
+        local_server["report_errors"] = self.uiCrashReportCheckBox.isChecked()
+        servers.setLocalServerSettings(local_server)
 
         new_settings = {}
-        new_settings["projects_path"] = self.uiProjectsPathLineEdit.text()
-        new_settings["images_path"] = self.uiImagesPathLineEdit.text()
-        new_settings["temporary_files_path"] = self.uiTemporaryFilesPathLineEdit.text()
         new_settings["auto_launch_project_dialog"] = self.uiLaunchNewProjectDialogCheckBox.isChecked()
+        new_settings["auto_screenshot"] = self.uiAutoScreenshotCheckBox.isChecked()
         new_settings["style"] = self.uiStyleComboBox.currentText()
         new_settings["check_for_update"] = self.uiCheckForUpdateCheckBox.isChecked()
         new_settings["link_manual_mode"] = self.uiLinkManualModeCheckBox.isChecked()

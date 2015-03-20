@@ -22,22 +22,10 @@ Default QEMU settings.
 from gns3.node import Node
 
 QEMU_SETTINGS = {
-    "console_start_port_range": 5001,
-    "console_end_port_range": 5500,
-    "monitor_start_port_range": 5501,
-    "monitor_end_port_range": 6000,
-    "udp_start_port_range": 40001,
-    "udp_end_port_range": 45500,
     "use_local_server": True,
 }
 
 QEMU_SETTING_TYPES = {
-    "console_start_port_range": int,
-    "console_end_port_range": int,
-    "monitor_start_port_range": int,
-    "monitor_end_port_range": int,
-    "udp_start_port_range": int,
-    "udp_end_port_range": int,
     "use_local_server": bool,
 }
 
@@ -49,6 +37,8 @@ QEMU_VM_SETTINGS = {
     "qemu_path": "",
     "hda_disk_image": "",
     "hdb_disk_image": "",
+    "hdc_disk_image": "",
+    "hdd_disk_image": "",
     "ram": 256,
     "adapters": 1,
     "adapter_type": "e1000",
@@ -70,6 +60,8 @@ QEMU_VM_SETTING_TYPES = {
     "qemu_path": str,
     "hda_disk_image": str,
     "hdb_disk_image": str,
+    "hdc_disk_image": str,
+    "hdd_disk_image": str,
     "ram": int,
     "adapters": int,
     "adapter_type": str,
@@ -85,7 +77,7 @@ QEMU_VM_SETTING_TYPES = {
 
 # Use a hardcoded list of binaries rather than a dynamic one so the user
 # doesn't require a running cloud instance to upload qemu images.
-QEMU_BINARIES_FOR_CLOUD = [
+QEMU_BINARIES_FOR_CLOUD = sorted([
     "qemu-system-arm",
     "qemu-system-microblaze",
     "qemu-system-mipsel",
@@ -112,5 +104,4 @@ QEMU_BINARIES_FOR_CLOUD = [
     "qemu-system-ppc64",
     "qemu-system-sparc",
     "qemu-system-xtensaeb",
-]
-QEMU_BINARIES_FOR_CLOUD.sort()
+])

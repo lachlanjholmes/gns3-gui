@@ -19,42 +19,14 @@
 Default VPCS settings.
 """
 
-import sys
-import os
-
-# default path to VPCS executable
-if sys.platform.startswith("win"):
-    DEFAULT_VPCS_PATH = r"vpcs\vpcs.exe"
-elif sys.platform.startswith("darwin") and hasattr(sys, "frozen"):
-    DEFAULT_VPCS_PATH = os.path.join(os.getcwd(), "vpcs")
-else:
-    paths = [os.getcwd()] + os.environ["PATH"].split(os.pathsep)
-    # look for VPCS in the current working directory and $PATH
-    DEFAULT_VPCS_PATH = "vpcs"
-    for path in paths:
-        try:
-            if "vpcs" in os.listdir(path) and os.access(os.path.join(path, "vpcs"), os.X_OK):
-                DEFAULT_VPCS_PATH = os.path.join(path, "vpcs")
-                break
-        except OSError:
-            continue
-
 VPCS_SETTINGS = {
-    "path": DEFAULT_VPCS_PATH,
-    "console_start_port_range": 4501,
-    "console_end_port_range": 5000,
-    "udp_start_port_range": 20501,
-    "udp_end_port_range": 21000,
+    "vpcs_path": "",
     "use_local_server": True,
     "base_script_file": "",
 }
 
 VPCS_SETTING_TYPES = {
-    "path": str,
-    "console_start_port_range": int,
-    "console_end_port_range": int,
-    "udp_start_port_range": int,
-    "udp_end_port_range": int,
+    "vpcs_path": str,
     "use_local_server": bool,
     "base_script_file": str,
 }

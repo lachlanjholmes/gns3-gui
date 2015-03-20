@@ -25,15 +25,19 @@ import tempfile
 import shutil
 import subprocess
 import shlex
+import logging
+
+log = logging.getLogger(__name__)
 
 from gns3.utils.normalize_filename import normalize_filename
-
 from ..qt import QtCore
+from ..local_config import LocalConfig
 from ..nios.nio_udp import NIOUDP
 from ..settings import PACKET_CAPTURE_SETTINGS, PACKET_CAPTURE_SETTING_TYPES
 
 
 class Port(object):
+
     """
     Base port.
 
@@ -59,7 +63,7 @@ class Port(object):
         self._name = name
         self._short_name = None
         self._port_number = None
-        self._slot_number = None
+        self._adapter_number = None
         self._stub = stub
         self._link_id = None
         self._port_label = None
@@ -169,23 +173,23 @@ class Port(object):
 
         self._status = status
 
-    def slotNumber(self):
+    def adapterNumber(self):
         """
         Returns the slot number for this port.
 
         :returns: current slot number (integer)
         """
 
-        return self._slot_number
+        return self._adapter_number
 
-    def setSlotNumber(self, slot_number):
+    def setAdapterNumber(self, adapter_number):
         """
-        Sets the slot number for this port.
+        Sets the adapter number for this port.
 
-        :param slot_number: new slot number (integer)
+        :param adapter_number: new slot number (integer)
         """
 
-        self._slot_number = slot_number
+        self._adapter_number = adapter_number
 
     def portNumber(self):
         """
@@ -300,7 +304,7 @@ class Port(object):
                 return "<-> {port} {name}".format(port=self._destination_port.shortName(),
                                                   name=self._destination_node.name())
             return "connected to {name} on port {port}".format(name=self._destination_node.name(),
-                                                       port=self._destination_port.name())
+                                                               port=self._destination_port.name())
         return ""
 
     def setFree(self):
@@ -397,11 +401,21 @@ class Port(object):
         Loads the packet capture settings from the persistent settings file.
         """
 
+        local_config = LocalConfig.instance()
+
+        # restore the packet capture settings from QSettings (for backward compatibility)
+        legacy_settings = {}
         settings = QtCore.QSettings()
         settings.beginGroup("PacketCapture")
-        for name, value in PACKET_CAPTURE_SETTINGS.items():
-            cls._settings[name] = settings.value(name, value, type=PACKET_CAPTURE_SETTING_TYPES[name])
+        for name in PACKET_CAPTURE_SETTINGS.keys():
+            if settings.contains(name):
+                legacy_settings[name] = settings.value(name, type=PACKET_CAPTURE_SETTING_TYPES[name])
+        settings.remove("")
         settings.endGroup()
+        if legacy_settings:
+            local_config.saveSectionSettings("PacketCapture", legacy_settings)
+
+        cls._settings = local_config.loadSectionSettings("PacketCapture", PACKET_CAPTURE_SETTINGS)
 
     @classmethod
     def setPacketCaptureSettings(cls, new_settings):
@@ -412,11 +426,7 @@ class Port(object):
         """
 
         cls._settings.update(new_settings)
-        settings = QtCore.QSettings()
-        settings.beginGroup("PacketCapture")
-        for name, value in cls._settings.items():
-            settings.setValue(name, value)
-        settings.endGroup()
+        LocalConfig.instance().saveSectionSettings("PacketCapture", cls._settings)
 
     @classmethod
     def packetCaptureSettings(cls):
@@ -464,6 +474,7 @@ class Port(object):
 
         self._capturing = True
         self._capture_file_path = capture_file_path
+        log.info("Saving packet capture to {}".format(capture_file_path))
         if os.path.isfile(capture_file_path) and self._settings["command_auto_start"]:
             self.startPacketCaptureReader()
 
@@ -577,8 +588,8 @@ class Port(object):
             port["nio"] = str(self._nio)
         if self._port_number is not None:
             port["port_number"] = self._port_number
-        if self._slot_number is not None:
-            port["slot_number"] = self._slot_number
+        if self._adapter_number is not None:
+            port["adapter_number"] = self._adapter_number
         if self._stub:
             port["stub"] = self._stub
         if self.description():

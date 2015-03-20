@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file '/home/grossmj/PycharmProjects/gns3-gui/gns3/ui/new_project_dialog.ui'
+# Form implementation generated from reading ui file '/Users/noplay/code/gns3/gns3-gui/gns3/ui/new_project_dialog.ui'
 #
-# Created: Sun Nov  9 18:17:35 2014
-#      by: PyQt4 UI code generator 4.10.4
+# Created: Tue Mar  3 11:41:04 2015
+#      by: PyQt4 UI code generator 4.11.3
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -17,17 +17,20 @@ except AttributeError:
 
 try:
     _encoding = QtGui.QApplication.UnicodeUTF8
+
     def _translate(context, text, disambig):
         return QtGui.QApplication.translate(context, text, disambig, _encoding)
 except AttributeError:
     def _translate(context, text, disambig):
         return QtGui.QApplication.translate(context, text, disambig)
 
+
 class Ui_NewProjectDialog(object):
+
     def setupUi(self, NewProjectDialog):
         NewProjectDialog.setObjectName(_fromUtf8("NewProjectDialog"))
         NewProjectDialog.setWindowModality(QtCore.Qt.ApplicationModal)
-        NewProjectDialog.resize(491, 169)
+        NewProjectDialog.resize(491, 177)
         NewProjectDialog.setModal(True)
         self.gridLayout_2 = QtGui.QGridLayout(NewProjectDialog)
         self.gridLayout_2.setSizeConstraint(QtGui.QLayout.SetFixedSize)
@@ -62,6 +65,7 @@ class Ui_NewProjectDialog(object):
         self.uiLocationBrowserToolButton.setObjectName(_fromUtf8("uiLocationBrowserToolButton"))
         self.gridLayout.addWidget(self.uiLocationBrowserToolButton, 1, 4, 1, 1)
         self.uiTypeLabel = QtGui.QLabel(self.uiProjectGroupBox)
+        self.uiTypeLabel.setEnabled(True)
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Preferred)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -79,6 +83,7 @@ class Ui_NewProjectDialog(object):
         self.uiLocalRadioButton.setObjectName(_fromUtf8("uiLocalRadioButton"))
         self.gridLayout.addWidget(self.uiLocalRadioButton, 2, 1, 1, 1)
         self.uiCloudRadioButton = QtGui.QRadioButton(self.uiProjectGroupBox)
+        self.uiCloudRadioButton.setEnabled(False)
         self.uiCloudRadioButton.setObjectName(_fromUtf8("uiCloudRadioButton"))
         self.gridLayout.addWidget(self.uiCloudRadioButton, 2, 2, 1, 1)
         spacerItem = QtGui.QSpacerItem(201, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
@@ -92,7 +97,7 @@ class Ui_NewProjectDialog(object):
         self.gridLayout_2.addWidget(self.uiRecentProjectsPushButton, 1, 1, 1, 1)
         self.uiButtonBox = QtGui.QDialogButtonBox(NewProjectDialog)
         self.uiButtonBox.setOrientation(QtCore.Qt.Horizontal)
-        self.uiButtonBox.setStandardButtons(QtGui.QDialogButtonBox.Cancel|QtGui.QDialogButtonBox.Ok)
+        self.uiButtonBox.setStandardButtons(QtGui.QDialogButtonBox.Cancel | QtGui.QDialogButtonBox.Ok)
         self.uiButtonBox.setObjectName(_fromUtf8("uiButtonBox"))
         self.gridLayout_2.addWidget(self.uiButtonBox, 1, 2, 1, 1)
 
@@ -112,4 +117,3 @@ class Ui_NewProjectDialog(object):
         self.uiCloudRadioButton.setText(_translate("NewProjectDialog", "Cloud", None))
         self.uiOpenProjectPushButton.setText(_translate("NewProjectDialog", "&Open a project", None))
         self.uiRecentProjectsPushButton.setText(_translate("NewProjectDialog", "&Recent projects...", None))
-
