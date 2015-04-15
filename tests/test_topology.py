@@ -86,6 +86,80 @@ def test_dump(vpcs_device, project, local_server):
     }
 
 
+def test_randomize_id():
+    project_uuid = str(uuid.uuid4())
+    vm_uuid1 = str(uuid.uuid4())
+    vm_uuid2 = str(uuid.uuid4())
+    orig_topology = {
+        "project_id": project_uuid,
+        "topology": {
+            "nodes": [
+                {
+                    "vm_id": vm_uuid1,
+                },
+                {
+                    "vm_id": vm_uuid2
+                }
+            ]
+        }
+    }
+    topology = Topology()
+    top = topology._randomize_id(orig_topology)
+    assert top["project_id"] != project_uuid
+    assert top["topology"]["nodes"][0]["vm_id"] != vm_uuid1
+    assert top["topology"]["nodes"][1]["vm_id"] != vm_uuid2
+    assert top["topology"]["nodes"][0]["vm_id"] != top["topology"]["nodes"][1]["vm_id"]
+
+
+def test_dump_random_id(vpcs_device, project, local_server):
+    topology = Topology()
+    topology.project = project
+    topology.addNode(vpcs_device)
+
+    fake_uuid = str(uuid.uuid4())
+    with patch("uuid.uuid4", return_value=fake_uuid):
+        dump = topology.dump(include_gui_data=False, random_id=True)
+        assert dict(dump) == {
+            "project_id": fake_uuid,
+            "auto_start": False,
+            "name": project.name(),
+            "resources_type": "local",
+            "version": __version__,
+            "revision": 3,
+            "topology": {
+                "nodes": [
+                    {
+                        "id": vpcs_device.id(),
+                        "description": "VPCS device",
+                        "ports": [
+                            {
+                                "id": vpcs_device.ports()[0].id(),
+                                "name": "Ethernet0",
+                                "port_number": 0,
+                                "adapter_number": 0
+                            }
+                        ],
+                        "properties": {
+                            "name": vpcs_device.name()
+                        },
+                        "server_id": local_server.id(),
+                        "type": "VPCSDevice",
+                        "vm_id": fake_uuid}
+                ],
+                "servers": [
+                    {
+                        "cloud": False,
+                        "host": "127.0.0.1",
+                        "id": local_server.id(),
+                        "local": True,
+                        "port": 8000,
+                    }
+                ]
+            },
+            "type": "topology"
+        }
+
+
 def test_loadFile(tmpdir):
     topology = Topology()
     topo = str(tmpdir / "test" / "test.gns3")
@@ -327,10 +401,14 @@ def test_load_1_2_topology(project, monkeypatch, main_window, tmpdir):
 
     monkeypatch.setattr('gns3.main_window.MainWindow.instance', lambda: main_window)
 
+    project_call = 0
     # We return an uuid for each HTTP post
+
     def http_loader(self, method, path, callback, body={}, **kwargs):
         if path == "/projects":
             callback({"project_id": uuid.uuid4(), "path": str(tmpdir)}, error=False, server=local_server)
+            project_call += 1
+            assert project_call < 2
         else:
             callback({"vm_id": uuid.uuid4()})
 

@@ -17,9 +17,16 @@
 
 import sys
 import os
-import raven
-import struct
 import platform
+import struct
+
+try:
+    import raven
+    RAVEN_AVAILABLE = True
+except ImportError:
+    # raven is not installed with deb package in order to simplify packaging
+    RAVEN_AVAILABLE = False
+
 
 from .version import __version__
 from .servers import Servers
@@ -34,7 +41,7 @@ class CrashReport:
     Report crash to a third party service
     """
 
-    DSN = "sync+https://399087fc600b4a2984874af1cd57124c:a0f8323c923f4246917699c9519f2ff2@app.getsentry.com/38506"
+    DSN = "sync+https://93967ffc7e08401fa0b7578ecf08256b:8c0a5bcbc99e42f1819c6870d6362122@app.getsentry.com/38506"
     if hasattr(sys, "frozen"):
         cacert = os.path.join(os.getcwd(), "cacert.pem")
         if os.path.isfile(cacert):
@@ -47,6 +54,8 @@ class CrashReport:
         self._client = None
 
     def captureException(self, exception, value, tb):
+        if not RAVEN_AVAILABLE:
+            return
         local_server = Servers.instance().localServerSettings()
         if local_server["report_errors"]:
             if self._client is None:

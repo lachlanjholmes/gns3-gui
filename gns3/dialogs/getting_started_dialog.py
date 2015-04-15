@@ -40,15 +40,16 @@ class GettingStartedDialog(QtGui.QDialog, Ui_GettingStartedDialog):
         self.adjustSize()
         self.uiWebView.page().setLinkDelegationPolicy(QtWebKit.QWebPage.DelegateAllLinks)
         self.uiWebView.linkClicked.connect(self._urlClickedSlot)
-        self.uiWebView.loadFinished.connect(self._loadFinishedSlot)
         self._local_config = LocalConfig.instance()
         gui_settings = self._local_config.loadSectionSettings("GUI", {"hide_getting_started_dialog": False})
         self.uiCheckBox.setChecked(gui_settings["hide_getting_started_dialog"])
-        self._timer = QtCore.QTimer(self)
-        self._timer.timeout.connect(self._loadFinishedSlot)
-        self._timer.setSingleShot(True)
-        self._timer.start(5000)
-        self.uiWebView.load(QtCore.QUrl("http://start.gns3.net"))
+        getting_started = get_resource(os.path.join("static", "getting_started.html"))
+        if getting_started and not (sys.platform.startswith("win") and not sys.maxsize > 2 ** 32):
+            # do not show the page on Windows 32-bit (crash when no Internet connection)
+            self.uiWebView.load(QtCore.QUrl.fromLocalFile(getting_started))
+        else:
+            self.uiCheckBox.setChecked(True)
+            self.accept()
 
     def showit(self):
         """
@@ -78,23 +79,3 @@ class GettingStartedDialog(QtGui.QDialog, Ui_GettingStartedDialog):
 
         if QtGui.QDesktopServices.openUrl(url) is False:
             QtGui.QMessageBox.critical(self, "Getting started", "Failed to open the URL: {}".format(url))
-
-    def _loadFinishedSlot(self, result=False):
-        """
-        Slot called when the web page has been loaded.
-
-        :param result: boolean
-        """
-
-        self.uiWebView.loadFinished.disconnect(self._loadFinishedSlot)
-        self._timer.stop()
-        self._timer.timeout.disconnect()
-        if result is False:
-            # load a local resource if the page is not available
-            getting_started = get_resource(os.path.join("static", "getting_started.html"))
-            if getting_started and not (sys.platform.startswith("win") and not sys.maxsize > 2 ** 32):
-                # do not show the page on Windows 32-bit (crash when no Internet connection)
-                self.uiWebView.load(QtCore.QUrl("file://{}".format(getting_started)))
-            else:
-                self.uiCheckBox.setChecked(True)
-                self.accept()

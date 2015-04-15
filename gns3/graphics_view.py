@@ -22,6 +22,7 @@ Graphical view on the scene where items are drawn.
 import logging
 import os
 import pickle
+import functools
 
 from .qt import QtCore, QtGui, QtNetwork
 from .servers import Servers
@@ -543,6 +544,7 @@ class GraphicsView(QtGui.QGraphicsView):
                     QtGui.QGraphicsView.keyPressEvent(self, event)
                     return
             self.deleteActionSlot()
+            QtGui.QGraphicsView.keyPressEvent(self,event)
         else:
             QtGui.QGraphicsView.keyPressEvent(self, event)
 
@@ -725,6 +727,12 @@ class GraphicsView(QtGui.QGraphicsView):
             export_config_action.setIcon(QtGui.QIcon(':/icons/export_config.svg'))
             export_config_action.triggered.connect(self.exportConfigActionSlot)
             menu.addAction(export_config_action)
+
+        if True in list(map(lambda item: isinstance(item, NodeItem) and hasattr(item.node(), "saveConfig"), items)):
+            save_config_action = QtGui.QAction("Save config", menu)
+            save_config_action.setIcon(QtGui.QIcon(':/icons/save.svg'))
+            save_config_action.triggered.connect(self.saveConfigActionSlot)
+            menu.addAction(save_config_action)
 
         if True in list(map(lambda item: isinstance(item, NodeItem) and hasattr(item.node(), "startPacketCapture"), items)):
             capture_action = QtGui.QAction("Capture", menu)
@@ -957,16 +965,55 @@ class GraphicsView(QtGui.QGraphicsView):
                 return False
         return True
 
+    def consoleFromItems(self, items):
+        """
+        Console from scene items.
+
+        :param items: Item instances
+        """
+
+        nodes = {}
+        for item in items:
+            if isinstance(item, NodeItem) and hasattr(item.node(), "console") and item.node().initialized() and item.node().status() == Node.started:
+                node = item.node()
+                nodes[node.name()] = node
+
+        delay = self._main_window.settings()["delay_console_all"]
+        counter = 0
+        for name in sorted(nodes.keys()):
+            node = nodes[name]
+            callback = functools.partial(self.consoleToNode, node)
+            self._main_window.run_later(counter, callback)
+            counter += delay
+
     def consoleActionSlot(self):
         """
         Slot to receive events from the console action in the
         contextual menu.
         """
 
-        for item in self.scene().selectedItems():
-            if isinstance(item, NodeItem):
-                if self.consoleToNode(item.node()):
-                    continue
+        self.consoleFromItems(self.scene().selectedItems())
+
+    def auxConsoleFromItems(self, items):
+        """
+        Aux console from scene items.
+
+        :param items: Item instances
+        """
+
+        nodes = {}
+        for item in items:
+            if isinstance(item, NodeItem) and hasattr(item.node(), "auxConsole") and item.node().initialized() and item.node().status() == Node.started:
+                node = item.node()
+                nodes[node.name()] = node
+
+        delay = self._main_window.settings()["delay_console_all"]
+        counter = 0
+        for name in sorted(nodes.keys()):
+            node = nodes[name]
+            callback = functools.partial(self.consoleToNode, node, aux=True)
+            self._main_window.run_later(counter, callback)
+            counter += delay
 
     def auxConsoleActionSlot(self):
         """
@@ -974,10 +1021,7 @@ class GraphicsView(QtGui.QGraphicsView):
         contextual menu.
         """
 
-        for item in self.scene().selectedItems():
-            if isinstance(item, NodeItem):
-                if self.consoleToNode(item.node(), aux=True):
-                    continue
+        self.auxConsoleFromItems(self.scene().selectedItems())
 
     def importConfigActionSlot(self):
         """
@@ -1043,6 +1087,16 @@ class GraphicsView(QtGui.QGraphicsView):
                 item.node().exportConfig(config_path, private_config_path)
             else:
                 item.node().exportConfig(config_path)
+
+    def saveConfigActionSlot(self):
+        """
+        Slot to receive events from the save config action in the
+        contextual menu.
+        """
+
+        for item in self.scene().selectedItems():
+            if isinstance(item, NodeItem) and hasattr(item.node(), "saveConfig") and item.node().initialized():
+                item.node().saveConfig()
 
     def captureActionSlot(self):
         """

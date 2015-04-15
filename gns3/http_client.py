@@ -23,11 +23,15 @@ import urllib.parse
 import urllib.request
 from functools import partial
 
-from .version import __version__
+from .version import __version__, __version_info__
 from .qt import QtCore, QtNetwork
 
 import logging
 log = logging.getLogger(__name__)
+
+
+class HttpBadRequest(Exception):
+    pass
 
 
 class HTTPClient(QtCore.QObject):
@@ -54,8 +58,6 @@ class HTTPClient(QtCore.QObject):
         self._version = ""
 
         url_settings = urllib.parse.urlparse(url)
-
-        # TODO: move this to properties? (many references to .host and .port in the code)
         self.scheme = url_settings.scheme
         self.host = url_settings.netloc.split(":")[0]
         self.port = url_settings.port
@@ -90,6 +92,7 @@ class HTTPClient(QtCore.QObject):
         """
         :param progress_callback: A progress callback instance
         """
+
         cls._progress_callback = progress_callback
 
     @staticmethod
@@ -259,12 +262,25 @@ class HTTPClient(QtCore.QObject):
             if callback is not None:
                 callback({"message": msg}, error=True, server=self)
             return
-        if params["version"] != __version__:
-            msg = "Client version {} differs with server version {}".format(__version__, params["version"])
+
+        if "version" not in params or "local" not in params:
+            msg = "The remote server {}://{}:{} is not a GNS 3 server".format(self.scheme, self.host, self.port)
             log.error(msg)
             if callback is not None:
                 callback({"message": msg}, error=True, server=self)
             return
+
+        if params["version"] != __version__:
+            msg = "Client version {} differs with server version {}".format(__version__, params["version"])
+            log.error(msg)
+            # Official release
+            if __version_info__[3] == 0:
+                if callback is not None:
+                    callback({"message": msg}, error=True, server=self)
+                return
+            else:
+                print(msg)
+                print("WARNING: Use a different client and server version can create bugs. Use it at your own risk.")
 
         self.executeHTTPQuery(method, path, callback, body, context=original_context)
         self._connected = True
@@ -312,7 +328,22 @@ class HTTPClient(QtCore.QObject):
 
         response.finished.connect(partial(self._processResponse, response, callback, context))
 
+        if HTTPClient._progress_callback and HTTPClient._progress_callback.progress_dialog():
+            request_canceled = partial(self._requestCanceled, response, context)
+            HTTPClient._progress_callback.progress_dialog().canceled.connect(request_canceled)
+
+    def _requestCanceled(self, response, context):
+
+        if response.isRunning():
+            response.finished.disconnect()
+            response.abort()
+        if "query_id" in context:
+            self.notify_progress_end_query(context["query_id"])
+
     def _processResponse(self, response, callback, context):
+
+        status = None
+        body = None
 
         if "query_id" in context:
             self.notify_progress_end_query(context["query_id"])
@@ -320,6 +351,8 @@ class HTTPClient(QtCore.QObject):
             error_code = response.error()
             if error_code < 200:
                 self._connected = False
+            else:
+                status = response.attribute(QtNetwork.QNetworkRequest.HttpStatusCodeAttribute)
             error_message = response.errorString()
             log.info("Response error: {}".format(error_message))
             body = bytes(response.readAll()).decode()
@@ -346,6 +379,8 @@ class HTTPClient(QtCore.QObject):
                 else:
                     callback(params, server=self, context=context)
         response.deleteLater()
+        if status == 400:
+            raise HttpBadRequest(body)
 
     def dump(self):
         """

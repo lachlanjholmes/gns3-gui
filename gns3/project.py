@@ -47,9 +47,15 @@ class Project(QtCore.QObject):
         self._files_dir = None
         self._images_dir = None
         self._type = None
-        self._name = None
+        self._name = "untitled"
         self._project_instances.add(self)
+
+        # Manage project creations on multiple servers
         self._created_servers = set()
+        # We need to wait the first server
+        self._creating_first_server = None
+        # We queue query in order to ensure the project is only created once on remote server
+        self._callback_finish_creating_on_server = {}
 
         super().__init__()
 
@@ -157,6 +163,10 @@ class Project(QtCore.QObject):
     def commit(self):
         """Save project on remote servers"""
 
+        # If current project doesn't exist on remote server
+        if self._id is None:
+            return
+
         for server in list(self._created_servers):
             server.post("/projects/{project_id}/commit".format(project_id=self._id), None, body={})
 
@@ -219,17 +229,30 @@ class Project(QtCore.QObject):
         """
 
         if server not in self._created_servers:
-            func = functools.partial(self._projectOnServerCreated, method, path, callback, body, context=context)
+            func = functools.partial(self._projectOnServerCreated, method, path, callback, body, context=context, server=server)
 
-            body = {
-                "name": self._name,
-                "temporary": self._temporary,
-                "project_id": self._id
-            }
-            if server == self._servers.localServer():
-                body["path"] = self.filesDir()
+            if server not in self._callback_finish_creating_on_server:
+                # The project is currently in creation on first server we wait for project id
+                if self._creating_first_server is not None:
+                    func = functools.partial(self._projectHTTPQuery, server, method, path, callback, body=body, context=context)
+                    self._callback_finish_creating_on_server[self._creating_first_server].append(func)
+                else:
+                    if len(self._created_servers) == 0:
+                        self._creating_first_server = server
 
-            server.post("/projects", func, body)
+                    self._callback_finish_creating_on_server[server] = []
+                    body = {
+                        "name": self._name,
+                        "temporary": self._temporary,
+                        "project_id": self._id
+                    }
+                    if server == self._servers.localServer():
+                        body["path"] = self.filesDir()
+
+                    server.post("/projects", func, body)
+            else:
+                # If the project creation is already in progress we bufferize the query
+                self._callback_finish_creating_on_server[server].append(func)
         else:
             self._projectOnServerCreated(method, path, callback, body, params={}, server=server, context=context)
 
@@ -248,11 +271,14 @@ class Project(QtCore.QObject):
         :param context: Pass a context to the response callback
         """
 
+        self._creating_first_server = None
         if error:
             print("Error while creating project: {}".format(params["message"]))
             return
 
         if self._id is None:
+            # Try to track the issue: https://github.com/GNS3/gns3-gui/issues/232
+            assert "project_id" in params, "project_id not in {}".format(params)
             self._id = params["project_id"]
 
         if server == self._servers.localServer() and "path" in params:
@@ -265,6 +291,13 @@ class Project(QtCore.QObject):
 
         path = "/projects/{project_id}{path}".format(project_id=self._id, path=path)
         server.createHTTPQuery(method, path, callback, body=body, context=context)
+
+        # Call all operations waiting for project creation:
+        if server in self._callback_finish_creating_on_server:
+            callbacks = self._callback_finish_creating_on_server[server]
+            del self._callback_finish_creating_on_server[server]
+            for call in callbacks:
+                call()
 
     def close(self, local_server_shutdown=False):
         """Close project"""
@@ -301,7 +334,10 @@ class Project(QtCore.QObject):
         if len(self._created_servers) == 0:
             self._closed = True
             self.project_closed_signal.emit()
-            self._project_instances.remove(self)
+            try:
+                self._project_instances.remove(self)
+            except KeyError:
+                return
 
     def moveFromTemporaryToPath(self, new_path):
         """

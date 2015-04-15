@@ -753,26 +753,14 @@ class MainWindow(QtGui.QMainWindow, Ui_MainWindow):
         Slot called when connecting to all the nodes using the AUX console.
         """
 
-        delay = self._settings["delay_console_all"]
-        counter = 0
-        for item in self.uiGraphicsView.scene().items():
-            if isinstance(item, NodeItem) and hasattr(item.node(), "auxConsole") and item.node().initialized() and item.node().status() == Node.started:
-                callback = functools.partial(self.uiGraphicsView.consoleToNode, item.node(), aux=True)
-                self.run_later(counter, callback)
-                counter += delay
+        self.uiGraphicsView.auxConsoleFromItems(self.uiGraphicsView.scene().items())
 
     def _consoleAllActionSlot(self):
         """
         Slot called when connecting to all the nodes using the console.
         """
 
-        delay = self._settings["delay_console_all"]
-        counter = 0
-        for item in self.uiGraphicsView.scene().items():
-            if isinstance(item, NodeItem) and hasattr(item.node(), "console") and item.node().initialized() and item.node().status() == Node.started:
-                callback = functools.partial(self.uiGraphicsView.consoleToNode, item.node())
-                self.run_later(counter, callback)
-                counter += delay
+        self.uiGraphicsView.consoleFromItems(self.uiGraphicsView.scene().items())
 
     def _vpcsActionSlot(self):
         """
@@ -1065,18 +1053,16 @@ class MainWindow(QtGui.QMainWindow, Ui_MainWindow):
         """
 
         servers = Servers.instance()
-        server = servers.localServer()
-
-        if self._project.closed() and not (servers.localServerAutoStart() and server.isServerRunning()):
+        if self._project.closed() and not servers.localServerIsRunning():
             event.accept()
         elif self.checkForUnsavedChanges():
             self._project.project_closed_signal.connect(self._finish_application_closing)
-            if servers.localServerAutoStart():
+            if servers.localServerIsRunning():
                 self._project.close(local_server_shutdown=True)
             else:
                 self._project.close(local_server_shutdown=False)
 
-            if self._project.closed() and not (servers.localServerAutoStart() and server.isServerRunning()):
+            if self._project.closed() and not servers.localServerIsRunning():
                 event.accept()
             else:
                 event.ignore()
@@ -1091,11 +1077,6 @@ class MainWindow(QtGui.QMainWindow, Ui_MainWindow):
 
         log.debug("_finish_application_closing")
         VPCS.instance().stopMultiHostVPCS()
-
-        # save the geometry and state of the main window.
-        # settings = QtCore.QSettings()
-        # settings.setValue("GUI/geometry", self.saveGeometry())
-        # settings.setValue("GUI/state", self.saveState())
 
         local_config = LocalConfig.instance()
         local_config.saveSectionSettings("GUI", {"geometry": bytes(self.saveGeometry().toBase64()).decode(),
@@ -1314,7 +1295,7 @@ class MainWindow(QtGui.QMainWindow, Ui_MainWindow):
         except FileExistsError:
             pass
         except OSError as e:
-            QtGui.QMessageBox.critical(self, "Save project", "Could not create project directory {}: {}".format(project_dir), e)
+            QtGui.QMessageBox.critical(self, "Save project", "Could not create project directory {}: {}".format(project_dir, e))
             return
 
         if self._project.temporary():
@@ -1322,15 +1303,14 @@ class MainWindow(QtGui.QMainWindow, Ui_MainWindow):
             log.info("Moving project files from {} to {}".format(self._project.filesDir(), project_dir))
             thread = ProcessFilesThread(self._project.filesDir(), project_dir, move=True)
             progress_dialog = ProgressDialog(thread, "Project", "Moving project files...", "Cancel", parent=self)
-            thread.deleteLater()
         else:
             # else, just copy the files
             log.info("Copying project files from {} to {}".format(self._project.filesDir(), project_dir))
             thread = ProcessFilesThread(self._project.filesDir(), project_dir)
             progress_dialog = ProgressDialog(thread, "Project", "Copying project files...", "Cancel", parent=self)
-            thread.deleteLater()
         progress_dialog.show()
         progress_dialog.exec_()
+        thread.deleteLater()
 
         errors = progress_dialog.errors()
         if errors:
@@ -1342,26 +1322,24 @@ class MainWindow(QtGui.QMainWindow, Ui_MainWindow):
             self._project.moveFromTemporaryToPath(project_dir)
             return self.saveProject(topology_file_path)
         else:
-            # We save the topology and use the standard restore process
-            self._project.setId(None)
+            # We save the topology and use the standard restore process to reinitialize everything
             self._project.setTopologyFile(topology_file_path)
-            self.saveProject(topology_file_path)
-            return self.loadProject(topology_file_path)
+            self.saveProject(topology_file_path, random_id=True)
+            return self._loadPath(topology_file_path)
 
-    def saveProject(self, path):
+    def saveProject(self, path, random_id=False):
         """
         Saves a project.
 
         :param path: path to project file
+        :param random_id: Randomize project and vm id (use for save as)
         """
 
         topology = Topology.instance()
         topology.project = self._project
         try:
             self._project.commit()
-            for module in MODULES:
-                module.instance().save()
-            topo = topology.dump()
+            topo = topology.dump(random_id=random_id)
             with open(path, "w") as f:
                 log.info("Saving project: {}".format(path))
                 json.dump(topo, f, sort_keys=True, indent=4)
@@ -1691,6 +1669,7 @@ class MainWindow(QtGui.QMainWindow, Ui_MainWindow):
         :params counter: Time to wait before fire the callback (in milliseconds)
         :params callback: Function to run
         """
+
         QtCore.QTimer.singleShot(counter, callback)
 
     def _exportProjectActionSlot(self):

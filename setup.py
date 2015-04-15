@@ -46,17 +46,17 @@ setup(
     long_description=open("README.rst", "r").read(),
     install_requires=[
         "apache-libcloud>=0.14.1",
-        "requests==2.4.3",
-        "paramiko==1.15.1",
-        "gns3-converter",
-        "raven==5.2.0"
+        "requests>=2.4.3",
+        "paramiko>=1.15.1",
+        "gns3-converter>=1.2.3",
+        "raven>=5.2.0"
     ],
     entry_points={
         "gui_scripts": [
             "gns3 = gns3.main:main",
         ]
     },
-    packages=find_packages(),
+    packages=find_packages(".", exclude=["docs", "tests"]),
     include_package_data=True,
     package_data={"gns3": ["configs/*.txt"]},
     platforms="any",
